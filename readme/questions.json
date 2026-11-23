@@ -1,0 +1,233 @@
+{
+  "meta": {
+    "title": "General Knowledge Quiz",
+    "totalQuestions": 30,
+    "difficultyTarget": "about 70% of people know the answer",
+    "categories": {
+      "computer": 15,
+      "math": 8,
+      "science": 7
+    },
+    "matching": {
+      "caseSensitive": false,
+      "trimWhitespace": true,
+      "normalize": [
+        "lowercase",
+        "trim"
+      ],
+      "note": "Compare the player's answer to every string in accepted_answers after lowercasing and trimming. This makes RAM, ram, and Ram all valid."
+    }
+  },
+  "questions": [
+    {
+      "id": "q001",
+      "category": "computer",
+      "question": "What does RAM stand for?",
+      "answer": "Random Access Memory",
+      "accepted_answers": ["RAM", "Random Access Memory", "random access memory", "ram"]
+    },
+    {
+      "id": "q002",
+      "category": "computer",
+      "question": "What does CPU stand for?",
+      "answer": "Central Processing Unit",
+      "accepted_answers": ["CPU", "Central Processing Unit", "central processing unit", "cpu"]
+    },
+    {
+      "id": "q003",
+      "category": "computer",
+      "question": "What is the binary representation of the decimal number 10?",
+      "answer": "1010",
+      "accepted_answers": ["1010", "binary 1010", "0b1010"]
+    },
+    {
+      "id": "q004",
+      "category": "computer",
+      "question": "Who is commonly credited as the first computer programmer?",
+      "answer": "Ada Lovelace",
+      "accepted_answers": ["Ada Lovelace", "ada lovelace", "Ada Byron", "Lady Lovelace"]
+    },
+    {
+      "id": "q005",
+      "category": "computer",
+      "question": "What does URL stand for?",
+      "answer": "Uniform Resource Locator",
+      "accepted_answers": ["URL", "Uniform Resource Locator", "uniform resource locator", "url"]
+    },
+    {
+      "id": "q006",
+      "category": "computer",
+      "question": "What is the main job of a GPU?",
+      "answer": "Rendering graphics / parallel processing",
+      "accepted_answers": ["GPU", "Graphics Processing Unit", "graphics card", "rendering graphics", "parallel processing", "processing graphics"]
+    },
+    {
+      "id": "q007",
+      "category": "computer",
+      "question": "What is phishing?",
+      "answer": "A scam that tricks people into revealing sensitive information",
+      "accepted_answers": ["phishing", "phishing attack", "phishing scam", "a scam to steal passwords or personal information", "fake emails or sites to steal information"]
+    },
+    {
+      "id": "q008",
+      "category": "computer",
+      "question": "Who created the Linux kernel?",
+      "answer": "Linus Torvalds",
+      "accepted_answers": ["Linus Torvalds", "linus torvalds", "Linus"]
+    },
+    {
+      "id": "q009",
+      "category": "computer",
+      "question": "What is the primary language used to add interactivity to web pages?",
+      "answer": "JavaScript",
+      "accepted_answers": ["JavaScript", "javascript", "JS", "js"]
+    },
+    {
+      "id": "q010",
+      "category": "computer",
+      "question": "What does a firewall do?",
+      "answer": "Monitors and controls network traffic based on security rules",
+      "accepted_answers": ["firewall", "a firewall", "blocks unauthorized network traffic", "monitors and controls network traffic", "protects a network from unauthorized access"]
+    },
+    {
+      "id": "q011",
+      "category": "computer",
+      "question": "What does HTTP stand for?",
+      "answer": "HyperText Transfer Protocol",
+      "accepted_answers": ["HTTP", "HyperText Transfer Protocol", "Hypertext Transfer Protocol", "http"]
+    },
+    {
+      "id": "q012",
+      "category": "computer",
+      "question": "What is the name for a reusable piece of code that takes inputs and returns an output?",
+      "answer": "A function",
+      "accepted_answers": ["function", "a function", "subroutine", "procedure", "method"]
+    },
+    {
+      "id": "q013",
+      "category": "computer",
+      "question": "What does AI stand for?",
+      "answer": "Artificial Intelligence",
+      "accepted_answers": ["AI", "Artificial Intelligence", "artificial intelligence", "ai"]
+    },
+    {
+      "id": "q014",
+      "category": "computer",
+      "question": "What is the term for a copy of data kept in case the original is lost?",
+      "answer": "A backup",
+      "accepted_answers": ["backup", "a backup", "back up", "data backup", "a copy of the data"]
+    },
+    {
+      "id": "q015",
+      "category": "computer",
+      "question": "What company develops the Windows operating system?",
+      "answer": "Microsoft",
+      "accepted_answers": ["Microsoft", "microsoft", "MS"]
+    },
+    {
+      "id": "q016",
+      "category": "math",
+      "question": "What is 15% of 200?",
+      "answer": "30",
+      "accepted_answers": ["30", "thirty"]
+    },
+    {
+      "id": "q017",
+      "category": "math",
+      "question": "What is the formula for the area of a circle?",
+      "answer": "πr²",
+      "accepted_answers": ["πr²", "pi r squared", "π r^2", "pi * r^2", "area = πr²", "pi r^2"]
+    },
+    {
+      "id": "q018",
+      "category": "math",
+      "question": "In a right triangle, what does the Pythagorean theorem state?",
+      "answer": "a² + b² = c²",
+      "accepted_answers": ["a² + b² = c²", "a^2 + b^2 = c^2", "a squared plus b squared equals c squared", "a²+b²=c²"]
+    },
+    {
+      "id": "q019",
+      "category": "math",
+      "question": "What is the value of π (pi) to two decimal places?",
+      "answer": "3.14",
+      "accepted_answers": ["3.14", "pi = 3.14", "3,14"]
+    },
+    {
+      "id": "q020",
+      "category": "math",
+      "question": "A triangle has angles of 60° and 70°. What is the third angle?",
+      "answer": "50°",
+      "accepted_answers": ["50", "50°", "50 degrees", "fifty degrees"]
+    },
+    {
+      "id": "q021",
+      "category": "math",
+      "question": "What is 2⁵?",
+      "answer": "32",
+      "accepted_answers": ["32", "thirty-two", "thirty two"]
+    },
+    {
+      "id": "q022",
+      "category": "math",
+      "question": "What is the average (mean) of 4, 8, and 12?",
+      "answer": "8",
+      "accepted_answers": ["8", "eight", "8.0"]
+    },
+    {
+      "id": "q023",
+      "category": "math",
+      "question": "What is the sum of the interior angles of a quadrilateral?",
+      "answer": "360°",
+      "accepted_answers": ["360", "360°", "360 degrees", "three hundred sixty degrees"]
+    },
+    {
+      "id": "q024",
+      "category": "science",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "accepted_answers": ["Au", "AU", "au", "gold"]
+    },
+    {
+      "id": "q025",
+      "category": "science",
+      "question": "What gas do plants absorb during photosynthesis?",
+      "answer": "Carbon dioxide",
+      "accepted_answers": ["Carbon dioxide", "carbon dioxide", "CO2", "CO₂", "co2"]
+    },
+    {
+      "id": "q026",
+      "category": "science",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Jupiter",
+      "accepted_answers": ["Jupiter", "jupiter"]
+    },
+    {
+      "id": "q027",
+      "category": "science",
+      "question": "What is the human body's largest organ?",
+      "answer": "Skin",
+      "accepted_answers": ["Skin", "skin", "the skin"]
+    },
+    {
+      "id": "q028",
+      "category": "science",
+      "question": "What is the chemical symbol for iron?",
+      "answer": "Fe",
+      "accepted_answers": ["Fe", "FE", "fe", "iron"]
+    },
+    {
+      "id": "q029",
+      "category": "science",
+      "question": "Which part of a cell contains most of its DNA?",
+      "answer": "The nucleus",
+      "accepted_answers": ["nucleus", "The nucleus", "cell nucleus", "the nucleus"]
+    },
+    {
+      "id": "q030",
+      "category": "science",
+      "question": "What is the process called when liquid water turns into water vapor?",
+      "answer": "Evaporation",
+      "accepted_answers": ["Evaporation", "evaporation", "evaporating", "vaporization"]
+    }
+  ]
+}

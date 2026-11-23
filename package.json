@@ -1,0 +1,29 @@
+{
+  "name": "coalition-backrooms",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run scripts/dev.ts",
+    "dev:web": "vite dev",
+    "dev:ws": "bun run server.ts",
+    "build": "vite build",
+    "start": "MODE=prod bun run server.ts",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@sveltejs/kit": "^2.70.4",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "mongodb": "^7.9.1",
+    "svelte": "^5.59.1",
+    "svelte-adapter-bun": "^1.0.2",
+    "vite": "^8.3.8",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.5",
+    "svelte-check": "^4.7.8",
+    "typescript": "^5.9.3"
+  }
+}
