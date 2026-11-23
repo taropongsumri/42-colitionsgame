@@ -9,8 +9,10 @@
     "dev:ws": "bun run server.ts",
     "build": "vite build",
     "start": "MODE=prod bun run server.ts",
+    "seed": "bun run scripts/seed.ts",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test": "bun test"
+    "test": "bun test",
+    "test:e2e": "bun run scripts/e2e.ts"
   },
   "dependencies": {
     "@sveltejs/kit": "^2.70.4",

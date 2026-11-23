@@ -21,7 +21,9 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 	z.object({
 		type: z.literal('welcome'),
 		sessionId: z.string(),
-		house: houseIdSchema.nullable()
+		code: z.string(),
+		house: houseIdSchema.nullable(),
+		accepted: z.boolean()
 	}),
 	z.object({ type: z.literal('state'), state: z.unknown() }),
 	z.object({

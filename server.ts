@@ -1,20 +1,32 @@
-type SocketData = { path: string };
+import type { ServerWebSocket } from 'bun';
+import { env } from './config';
+import { encode, parseClientMessage, type ServerMessage } from './src/lib/shared/protocol';
+import type { HouseId } from './src/lib/shared/types';
+import { getStore } from './src/lib/server/db';
+import { getSessionView, markConnected, onDisconnect, SESSION_COOKIE } from './src/lib/server/lobby';
 
-const port = Number(Bun.env.PORT ?? 3000);
-const mode = Bun.env.MODE ?? 'dev';
+type SocketData = {
+	path: string;
+	token: string | null;
+	code: string | null;
+	house: HouseId | null;
+	accepted: boolean;
+};
 
 type AppFetch = (
 	request: Request,
 	server: Bun.Server<SocketData>
 ) => Response | Promise<Response> | undefined;
 
-let appFetch: AppFetch;
+const port = env.port;
+const sockets = new Set<ServerWebSocket<SocketData>>();
 
-if (mode === 'prod') {
+let appFetch: AppFetch;
+if (env.mode === 'prod') {
 	const { getHandler } = await import('./build/handler.js');
 	appFetch = getHandler().fetch as AppFetch;
 } else {
-	const devOrigin = new URL(Bun.env.VITE_ORIGIN ?? 'http://localhost:5173');
+	const devOrigin = new URL(env.viteOrigin);
 	appFetch = async (request) => {
 		const url = new URL(request.url);
 		url.protocol = devOrigin.protocol;
@@ -23,41 +35,117 @@ if (mode === 'prod') {
 	};
 }
 
-/**
- * Phase 0 spike: HTTP and WebSocket share one Bun.serve instance.
- * In prod, HTTP is handed to the SvelteKit adapter handler.
- * In dev, HTTP is proxied to Vite while /ws/* is handled here.
- */
+function cookieValue(header: string | null, name: string): string | undefined {
+	if (!header) return undefined;
+	for (const part of header.split(';')) {
+		const [key, ...rest] = part.trim().split('=');
+		if (key === name) return rest.join('=');
+	}
+	return undefined;
+}
+
+function send(ws: { send(data: string): void }, message: ServerMessage): void {
+	ws.send(encode(message));
+}
+
 const server = Bun.serve<SocketData>({
 	port,
-	fetch(request, bunServer) {
+	async fetch(request, bunServer) {
 		const url = new URL(request.url);
+
+		if (url.pathname === '/internal/kick' && request.method === 'POST') {
+			const token = url.searchParams.get('token') ?? '';
+			for (const ws of sockets) {
+				if (ws.data.token === token) ws.close(4001, 'Session revoked');
+			}
+			return new Response(null, { status: 204 });
+		}
+
 		if (
 			url.pathname.startsWith('/ws/') &&
 			request.headers.get('upgrade')?.toLowerCase() === 'websocket'
 		) {
-			return bunServer.upgrade(request, { data: { path: url.pathname } })
+			if (url.pathname === '/ws/spike') {
+				return bunServer.upgrade(request, {
+					data: { path: url.pathname, token: null, code: null, house: null, accepted: false }
+				})
+					? undefined
+					: new Response('Upgrade failed', { status: 400 });
+			}
+
+			const token = cookieValue(request.headers.get('cookie'), SESSION_COOKIE);
+			const view = await getSessionView(token);
+			if (!view) return new Response('Unauthorized', { status: 401 });
+
+			return bunServer.upgrade(request, {
+				data: {
+					path: url.pathname,
+					token: view.token,
+					code: view.code,
+					house: view.house,
+					accepted: view.accepted
+				}
+			})
 				? undefined
-				: new Response('WebSocket upgrade failed', { status: 400 });
+				: new Response('Upgrade failed', { status: 400 });
 		}
+
 		return appFetch(request, bunServer);
 	},
 	websocket: {
-		open(ws) {
-			ws.send(JSON.stringify({ type: 'spike.hello', path: ws.data.path }));
+		async open(ws) {
+			sockets.add(ws);
+			if (ws.data.path === '/ws/spike') {
+				ws.send(JSON.stringify({ type: 'spike.hello', path: ws.data.path }));
+				return;
+			}
+
+			if (ws.data.code) await markConnected(ws.data.code, true);
+			send(ws, {
+				type: 'welcome',
+				sessionId: ws.data.token ?? '',
+				code: ws.data.code ?? '',
+				house: ws.data.house,
+				accepted: ws.data.accepted
+			});
+
+			if (ws.data.house) {
+				const store = await getStore();
+				const house = await store.getHouse(ws.data.house);
+				if (house) send(ws, { type: 'state', state: house });
+			}
 		},
-		message(ws, message) {
-			ws.send(
-				JSON.stringify({
-					type: 'spike.echo',
-					data: typeof message === 'string' ? message : '[binary]'
-				})
-			);
+		async message(ws, raw) {
+			if (ws.data.path === '/ws/spike') {
+				ws.send(
+					JSON.stringify({
+						type: 'spike.echo',
+						data: typeof raw === 'string' ? raw : '[binary]'
+					})
+				);
+				return;
+			}
+
+			const message = parseClientMessage(typeof raw === 'string' ? raw : '');
+			if (!message) {
+				send(ws, { type: 'error', code: 'BAD_MESSAGE', message: 'Invalid message' });
+				return;
+			}
+			if (message.type === 'ping') {
+				send(ws, { type: 'pong', sentAt: message.sentAt });
+				return;
+			}
+			send(ws, {
+				type: 'error',
+				code: 'NOT_IMPLEMENTED',
+				message: `${message.type} arrives in a later phase`
+			});
 		},
-		close() {
-			// nothing to clean up yet
+		async close(ws) {
+			sockets.delete(ws);
+			if (ws.data.path !== '/ws/spike' && ws.data.code) await onDisconnect(ws.data.code);
 		}
 	}
 });
 
-console.log(`[server] mode=${mode} listening on http://localhost:${server.port} (WebSocket on /ws/*)`);
+console.log(`[server] mode=${env.mode} listening on http://localhost:${server.port} (WebSocket on /ws/*)`);
