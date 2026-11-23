@@ -12,7 +12,7 @@ const register = await fetch(`${base}/api/session`, { method: 'POST' });
 const cookie = register.headers.get('set-cookie')?.split(';')[0] ?? '';
 assert(cookie.startsWith('coalition_session='), 'session cookie issued');
 const registered = (await register.json()) as { session: { code: string; token: string } };
-const { code, token } = registered.session;
+const { code } = registered.session;
 assert(/^[A-HJ-NP-Z2-9]{4}$/.test(code), `machine code ${code}`);
 
 // 2. Admin sees the pending machine, assigns a house, and accepts it.
@@ -41,42 +41,112 @@ const view = (await (
 assert(view.session.house === 'h1' && view.session.accepted, 'session restores house after reload');
 
 // 4. WebSocket handshake uses the cookie and receives welcome + state.
-const received: string[] = [];
+type Message = { type: string; [key: string]: any };
+const messages: Message[] = [];
+const listeners = new Set<() => void>();
 const socket = new WebSocket(`${wsBase}/ws/play`, { headers: { cookie } } as never);
-await new Promise<void>((resolve, reject) => {
-	const timer = setTimeout(() => reject(new Error('websocket timeout')), 5000);
-	socket.onmessage = (event) => {
-		received.push(String(event.data));
-		if (received.length >= 2) {
-			clearTimeout(timer);
-			resolve();
+
+function waitForMessage(
+	type: string,
+	fromIndex: number,
+	predicate: (message: Message) => boolean = () => true,
+	timeoutMs = 5000
+): Promise<Message> {
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			listeners.delete(check);
+			reject(new Error(`timed out waiting for ${type}`));
+		}, timeoutMs);
+		function check() {
+			const found = messages.slice(fromIndex).find((m) => m.type === type && predicate(m));
+			if (found) {
+				clearTimeout(timer);
+				listeners.delete(check);
+				resolve(found);
+			}
 		}
-	};
-	socket.onerror = () => {
-		clearTimeout(timer);
-		reject(new Error('websocket error'));
-	};
-});
-assert(received.some((m) => m.includes('"type":"welcome"')), 'welcome received');
-assert(received.some((m) => m.includes('"type":"state"')), 'saved state received');
+		listeners.add(check);
+		check();
+	});
+}
+
+let socketStatus = 'connecting';
+socket.onmessage = (event) => {
+	messages.push(JSON.parse(String(event.data)) as Message);
+	for (const listener of listeners) listener();
+};
+socket.onopen = () => (socketStatus = 'open');
+socket.onerror = () => (socketStatus = 'error');
+socket.onclose = () => (socketStatus = 'closed');
+await Promise.all([
+	waitForMessage('welcome', 0, (m) => m.house === 'h1' && m.accepted === true),
+	waitForMessage('state', 0, (m) => m.state?.id === 'h1')
+]);
+assert(socketStatus === 'open', 'websocket opened');
+assert(messages.some((m) => m.type === 'welcome'), 'welcome received');
+assert(messages.some((m) => m.type === 'state'), 'saved state received');
 
 // 5. Ping/pong over the typed protocol.
-const pong = await new Promise<string>((resolve, reject) => {
-	const timer = setTimeout(() => reject(new Error('pong timeout')), 3000);
-	const original = socket.onmessage;
-	socket.onmessage = (event) => {
-		original?.call(socket, event);
-		const text = String(event.data);
-		if (text.includes('"type":"pong"')) {
-			clearTimeout(timer);
-			resolve(text);
-		}
-	};
-	socket.send(JSON.stringify({ type: 'ping', sentAt: 12345 }));
-});
-assert(pong.includes('12345'), 'ping/pong works');
+let cursor = messages.length;
+socket.send(JSON.stringify({ type: 'ping', sentAt: 12345 }));
+const pong = await waitForMessage('pong', cursor);
+assert(pong.sentAt === 12345, 'ping/pong works');
 
-// 6. Live config round trip.
+// 6. Phase 2 quiz flow: interact, wrong answer lock, correct answer, scoreboard.
+const { getStore } = await import('../src/lib/server/db');
+const { questionFor } = await import('../src/lib/server/game/dungeon');
+const { realTableFor } = await import('../src/lib/shared/dungeon');
+const store = await getStore();
+const questions = await store.listQuestions();
+assert(questions.length >= 10, 'questions are seeded');
+
+const house = await store.getHouse('h1');
+assert(house !== null, 'h1 house state exists');
+house!.room = 1;
+house!.solvedRooms = [];
+house!.score = 0;
+house!.answerLockUntil = null;
+await store.saveHouse(house!);
+
+const question = await questionFor('h1', 1);
+assert(question !== null, 'question available for h1 room 1');
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'interact', tableId: realTableFor('h1', 1) }));
+const asked = await waitForMessage('question', cursor);
+assert(asked.room === 1 && asked.prompt === question!.question, 'terminal question received');
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'answer', roomId: 'r1', answer: 'definitely-wrong' }));
+const wrong = await waitForMessage('answerResult', cursor);
+assert(wrong.correct === false && typeof wrong.lockUntil === 'number', 'wrong answer locks terminal');
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'answer', roomId: 'r1', answer: question!.answer }));
+const locked = await waitForMessage('answerResult', cursor);
+assert(locked.correct === false, 'locked terminal rejects answers');
+
+const lockedHouse = (await store.getHouse('h1'))!;
+lockedHouse.answerLockUntil = null;
+await store.saveHouse(lockedHouse);
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'answer', roomId: 'r1', answer: question!.answer }));
+const correct = await waitForMessage('answerResult', cursor);
+assert(correct.correct === true, 'correct answer accepted');
+const advanced = await waitForMessage(
+	'state',
+	cursor,
+	(m) => m.state?.id === 'h1' && m.state?.room === 2
+);
+assert(advanced.state.score > 0, 'score increased after clearing room');
+
+const board = (await (await fetch(`${base}/api/scoreboard`)).json()) as {
+	rows: { house: string; score: number }[];
+};
+assert(board.rows.find((row) => row.house === 'h1')?.score > 0, 'scoreboard reflects new score');
+
+// 7. Live config round trip.
 const configGet = (await (
 	await fetch(`${base}/api/admin/config`, { headers: adminHeaders })
 ).json()) as { config: { game: { roomCount: number } } };
@@ -103,7 +173,7 @@ const restored = (await (
 ).json()) as { config: { game: { roomCount: number } } };
 assert(restored.config.game.roomCount === 10, 'defaults restored');
 
-// 7. Kick revokes the session and closes the socket.
+// 8. Kick revokes the session and closes the socket.
 const closed = new Promise<void>((resolve) => {
 	socket.onclose = () => resolve();
 });

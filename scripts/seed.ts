@@ -7,6 +7,7 @@ interface SourceQuestion {
 	question: string;
 	answer: string;
 	accepted_answers: string[];
+	hint?: string;
 }
 
 const source = await Bun.file('readme/questions.json').json() as {
@@ -18,7 +19,8 @@ const questions: Question[] = source.questions.map((q) => ({
 	category: q.category,
 	question: q.question,
 	answer: q.answer,
-	acceptedAnswers: q.accepted_answers
+	acceptedAnswers: q.accepted_answers,
+	hint: q.hint
 }));
 
 const store = await getStore();

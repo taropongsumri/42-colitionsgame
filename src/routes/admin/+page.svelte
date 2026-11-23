@@ -18,6 +18,12 @@
 	let moveFrom = '';
 	let moveTo = '';
 	let configText = '';
+	let scoreHouse: HouseId = 'h1';
+	let unlockHouse: HouseId = 'h1';
+	let scoreAmount = 0;
+	let scoreReason = '';
+	let minutes = 5;
+	let announcement = '';
 
 	const headers = () => ({ 'x-admin-password': password, 'content-type': 'application/json' });
 
@@ -83,6 +89,17 @@
 		message = 'config reset to defaults';
 	}
 
+	async function control(action: string, payload: Record<string, unknown> = {}) {
+		const response = await fetch('/api/admin/control', {
+			method: 'POST',
+			headers: headers(),
+			body: JSON.stringify({ action, ...payload })
+		});
+		const data = (await response.json()) as { error?: string };
+		message = data.error ?? `${action} ok`;
+		await load();
+	}
+
 	onMount(() => {
 		void load();
 		void loadConfig();
@@ -90,7 +107,7 @@
 </script>
 
 <h1>Admin — Lobby</h1>
-<p><a href="/">Back to game</a></p>
+<p><a href="/">Back to game</a> · <a href="/scoreboard">Scoreboard</a></p>
 
 <label>
 	Password
@@ -143,6 +160,36 @@
 </section>
 
 <section>
+	<h2>Game control</h2>
+	<div class="controls">
+		<button onclick={() => control('start')}>Start game</button>
+		<button onclick={() => control('pause')}>Pause</button>
+		<button onclick={() => control('resume')}>Resume</button>
+		<button onclick={() => control('end')}>End game</button>
+		<label>Time <input type="number" bind:value={minutes} min="-120" max="120" /></label>
+		<button onclick={() => control('addTime', { minutes })}>Add minutes</button>
+	</div>
+	<div class="controls">
+		<select bind:value={scoreHouse}>
+			{#each HOUSE_IDS as id}<option value={id}>{id}</option>{/each}
+		</select>
+		<input type="number" bind:value={scoreAmount} placeholder="± points" />
+		<input bind:value={scoreReason} placeholder="reason" />
+		<button onclick={() => control('adjustScore', { house: scoreHouse, amount: scoreAmount, reason: scoreReason })}>Adjust score</button>
+	</div>
+	<div class="controls">
+		<select bind:value={unlockHouse}>
+			{#each HOUSE_IDS as id}<option value={id}>{id}</option>{/each}
+		</select>
+		<button onclick={() => control('forceUnlock', { house: unlockHouse })}>Force unlock room</button>
+	</div>
+	<div class="controls">
+		<input bind:value={announcement} placeholder="message to all players" />
+		<button onclick={() => control('announce', { text: announcement })}>Announce</button>
+	</div>
+</section>
+
+<section>
 	<h2>Live config</h2>
 	<textarea bind:value={configText} rows="12"></textarea>
 	<div>
@@ -172,6 +219,7 @@
 	}
 	textarea, pre { width: 100%; box-sizing: border-box; }
 	section { margin: 1.5rem 0; }
+	.controls { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin: 0.4rem 0; }
 	.message { color: #f5b301; }
 	a { color: #8b5cf6; }
 </style>

@@ -3,6 +3,9 @@ import { env } from './config';
 import { encode, parseClientMessage, type ServerMessage } from './src/lib/shared/protocol';
 import type { HouseId } from './src/lib/shared/types';
 import { getStore } from './src/lib/server/db';
+import { timeLeftMs } from './src/lib/server/game/clock';
+import { roomStatuses } from './src/lib/server/game/dungeon';
+import { interact, submitAnswer } from './src/lib/server/game/play';
 import { getSessionView, markConnected, onDisconnect, SESSION_COOKIE } from './src/lib/server/lobby';
 
 type SocketData = {
@@ -48,6 +51,46 @@ function send(ws: { send(data: string): void }, message: ServerMessage): void {
 	ws.send(encode(message));
 }
 
+function broadcast(message: ServerMessage): void {
+	for (const ws of sockets) {
+		if (ws.data.path !== '/ws/spike') send(ws, message);
+	}
+}
+
+async function shadows(): Promise<ServerMessage> {
+	const store = await getStore();
+	const houses = await store.listHouses();
+	return {
+		type: 'shadows',
+		houses: houses.map((house) => ({
+			house: house.id,
+			room: house.room,
+			connected: house.connected
+		}))
+	};
+}
+
+async function scoreboard(): Promise<ServerMessage> {
+	const store = await getStore();
+	const [houses, meta, left] = await Promise.all([
+		store.listHouses(),
+		store.getMeta(),
+		timeLeftMs(store)
+	]);
+	return {
+		type: 'scoreboard',
+		rows: houses.map((house) => ({
+			house: house.id,
+			score: house.score,
+			room: house.room,
+			hp: house.hp
+		})),
+		timeLeftMs: left,
+		paused: meta.paused,
+		announcement: meta.announcement
+	};
+}
+
 const server = Bun.serve<SocketData>({
 	port,
 	async fetch(request, bunServer) {
@@ -58,6 +101,11 @@ const server = Bun.serve<SocketData>({
 			for (const ws of sockets) {
 				if (ws.data.token === token) ws.close(4001, 'Session revoked');
 			}
+			return new Response(null, { status: 204 });
+		}
+
+		if (url.pathname === '/internal/notice' && request.method === 'POST') {
+			broadcast({ type: 'notice', text: url.searchParams.get('text') ?? '' });
 			return new Response(null, { status: 204 });
 		}
 
@@ -111,8 +159,17 @@ const server = Bun.serve<SocketData>({
 
 			if (ws.data.house) {
 				const store = await getStore();
-				const house = await store.getHouse(ws.data.house);
-				if (house) send(ws, { type: 'state', state: house });
+				const state = await store.getHouse(ws.data.house);
+				if (state) {
+					send(ws, { type: 'state', state });
+					send(ws, {
+						type: 'dungeon',
+						current: state.room,
+						rooms: await roomStatuses(state)
+					});
+				}
+				send(ws, await scoreboard());
+				broadcast(await shadows());
 			}
 		},
 		async message(ws, raw) {
@@ -135,6 +192,34 @@ const server = Bun.serve<SocketData>({
 				send(ws, { type: 'pong', sentAt: message.sentAt });
 				return;
 			}
+
+			if (!ws.data.house) {
+				send(ws, { type: 'error', code: 'NO_HOUSE', message: 'No house assigned' });
+				return;
+			}
+
+			if (message.type === 'interact') {
+				const result = await interact(ws.data.house, message.tableId);
+				for (const outgoing of result.messages) send(ws, outgoing);
+				if (result.notice) broadcast({ type: 'notice', text: result.notice });
+				if (result.progressChanged) {
+					broadcast(await shadows());
+					broadcast(await scoreboard());
+				}
+				return;
+			}
+
+			if (message.type === 'answer') {
+				const result = await submitAnswer(ws.data.house, message.answer);
+				for (const outgoing of result.messages) send(ws, outgoing);
+				if (result.notice) broadcast({ type: 'notice', text: result.notice });
+				if (result.progressChanged) {
+					broadcast(await shadows());
+					broadcast(await scoreboard());
+				}
+				return;
+			}
+
 			send(ws, {
 				type: 'error',
 				code: 'NOT_IMPLEMENTED',
@@ -143,7 +228,11 @@ const server = Bun.serve<SocketData>({
 		},
 		async close(ws) {
 			sockets.delete(ws);
-			if (ws.data.path !== '/ws/spike' && ws.data.code) await onDisconnect(ws.data.code);
+			if (ws.data.path !== '/ws/spike' && ws.data.code) {
+				await onDisconnect(ws.data.code);
+				broadcast(await shadows());
+				broadcast(await scoreboard());
+			}
 		}
 	}
 });

@@ -46,6 +46,11 @@ Open `http://localhost:3000`. HTTP and WebSocket share the same port.
 4. The game page now shows the house and saved state. Refreshing restores it.
 5. Admin can **Kick** or **Move** a session to another machine. One active client per house.
 6. Disconnecting during a boss fight resets that boss's HP.
+7. Move with **WASD / arrow keys**. The powered table glows; stand near it and press **E**.
+8. Answer in the terminal. Wrong answers lock that house's terminal for 10 seconds.
+9. A correct answer clears the room, awards points with a first/second/third-place bonus, and moves the house to the next room.
+10. Other houses appear as translucent shadows when they are in the same room (fog of war).
+11. `/scoreboard` polls scores and the clock; `/admin` can start/pause/resume/end, add time, adjust score, force-unlock a room, and announce.
 
 ## Storage
 
@@ -61,8 +66,12 @@ The local store is reloaded from disk on every operation so the dev web process 
 ```bash
 bun run check       # type-check Svelte + TypeScript
 bun test            # unit tests
-bun run test:e2e    # full HTTP + WebSocket flow (server must be running)
+bun run test:e2e    # full HTTP + WebSocket flow (server must be running and questions seeded)
 ```
+
+Player and pet sprites in `static/sprites/` were copied from the earlier pixel-art prototype so
+Phase 2 can render real artwork instead of placeholders. They are scaled 2x with smoothing off.
+
 
 ## Architecture note
 
@@ -78,7 +87,7 @@ This project therefore uses a custom Bun server (`server.ts`) that:
 
 - [x] **Phase 0** — scaffold, compatible dependencies, HTTP + WebSocket spike, shared protocol
 - [x] **Phase 1** — config, local/Mongo storage, machine codes, admin accept/kick/move, reconnect, boss-disconnect reset, live config, seed script
-- [ ] Phase 2 — quiz rooms, terminal, doors/fog, scoring, scoreboard
+- [x] **Phase 2** — quiz rooms, terminals/locks/hints, sprites, fog/shadows, clock, scoring, scoreboard, admin controls
 - [ ] Phase 3 — boss mechanics
 - [ ] Phase 4 — full admin, spectator, Discord, audit log
 - [ ] Phase 5 — pixel-art client and effects

@@ -11,3 +11,15 @@ export async function kickSockets(token: string): Promise<void> {
 		console.warn('[ws-control] could not reach socket server', error);
 	}
 }
+
+/** Sends an admin announcement to every connected player. */
+export async function broadcastNotice(text: string): Promise<void> {
+	try {
+		await fetch(
+			`http://localhost:${env.port}/internal/notice?text=${encodeURIComponent(text)}`,
+			{ method: 'POST' }
+		);
+	} catch (error) {
+		console.warn('[ws-control] could not reach socket server', error);
+	}
+}

@@ -28,6 +28,17 @@ export interface HouseState {
 	answerLockUntil: number | null;
 	adjustmentCount: number;
 	connected: boolean;
+	solvedRooms: number[];
+	lastClearAt: number | null;
+}
+
+export interface GameMeta {
+	startedAt: number | null;
+	endsAt: number | null;
+	paused: boolean;
+	remainingMs: number;
+	announcement: string | null;
+	finished: boolean;
 }
 
 export interface ConfigRevision {
@@ -57,6 +68,9 @@ export interface Store {
 	getHouse(id: HouseId): Promise<HouseState | null>;
 	listHouses(): Promise<HouseState[]>;
 	saveHouse(state: HouseState): Promise<void>;
+
+	getMeta(): Promise<GameMeta>;
+	saveMeta(meta: GameMeta): Promise<void>;
 
 	getConfig(): Promise<Record<string, unknown>>;
 	setConfig(value: Record<string, unknown>, by: string): Promise<void>;

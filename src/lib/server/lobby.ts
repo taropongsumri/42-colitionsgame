@@ -28,7 +28,9 @@ async function ensureHouses(store: Store): Promise<void> {
 				boss: { active: false, hp: 1000, maxHp: 1000 },
 				answerLockUntil: null,
 				adjustmentCount: 0,
-				connected: false
+				connected: false,
+				solvedRooms: [],
+				lastClearAt: null
 			};
 			await store.saveHouse(house);
 		}

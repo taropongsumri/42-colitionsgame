@@ -27,11 +27,34 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 	}),
 	z.object({ type: z.literal('state'), state: z.unknown() }),
 	z.object({
+		type: z.literal('question'),
+		room: z.number(),
+		prompt: z.string(),
+		hint: z.string().nullable()
+	}),
+	z.object({
+		type: z.literal('dungeon'),
+		current: z.number(),
+		rooms: z.array(z.object({ number: z.number(), status: z.string() }))
+	}),
+	z.object({
+		type: z.literal('shadows'),
+		houses: z.array(
+			z.object({ house: houseIdSchema, room: z.number(), connected: z.boolean() })
+		)
+	}),
+	z.object({
 		type: z.literal('answerResult'),
 		correct: z.boolean(),
 		lockUntil: z.number().nullable()
 	}),
-	z.object({ type: z.literal('scoreboard'), rows: z.array(z.unknown()) }),
+	z.object({
+		type: z.literal('scoreboard'),
+		rows: z.array(z.unknown()),
+		timeLeftMs: z.number(),
+		paused: z.boolean(),
+		announcement: z.string().nullable()
+	}),
 	z.object({ type: z.literal('notice'), text: z.string() }),
 	z.object({ type: z.literal('error'), code: z.string(), message: z.string() })
 ]);

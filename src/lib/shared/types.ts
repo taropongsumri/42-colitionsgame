@@ -51,6 +51,7 @@ export interface Question {
 	question: string;
 	answer: string;
 	acceptedAnswers: readonly string[];
+	hint?: string;
 }
 
 export interface ScoreRow {

@@ -4,6 +4,7 @@ import { env } from '../../../../config';
 import type { HouseId, Question } from '../../shared/types';
 import type {
 	ConfigRevision,
+	GameMeta,
 	HouseState,
 	LogEntry,
 	Machine,
@@ -18,7 +19,17 @@ interface Persisted {
 	config: { value: Record<string, unknown>; history: ConfigRevision[] };
 	questions: Question[];
 	logs: LogEntry[];
+	meta: GameMeta;
 }
+
+const defaultMeta = (): GameMeta => ({
+	startedAt: null,
+	endsAt: null,
+	paused: false,
+	remainingMs: 0,
+	announcement: null,
+	finished: false
+});
 
 const empty = (): Persisted => ({
 	machines: {},
@@ -26,7 +37,8 @@ const empty = (): Persisted => ({
 	houses: {},
 	config: { value: {}, history: [] },
 	questions: [],
-	logs: []
+	logs: [],
+	meta: defaultMeta()
 });
 
 /**
@@ -55,7 +67,17 @@ export class MemoryStore implements Store {
 			return;
 		}
 		try {
-			this.state = { ...empty(), ...(JSON.parse(text) as Persisted) };
+			const parsed = JSON.parse(text) as Partial<Persisted>;
+			this.state = {
+				...empty(),
+				...parsed,
+				meta: { ...defaultMeta(), ...parsed.meta },
+				config: { ...empty().config, ...parsed.config }
+			};
+			for (const house of Object.values(this.state.houses)) {
+				house.solvedRooms ??= [];
+				house.lastClearAt ??= null;
+			}
 		} catch {
 			this.state = empty();
 		}
@@ -117,6 +139,17 @@ export class MemoryStore implements Store {
 	async saveHouse(state: HouseState): Promise<void> {
 		await this.load();
 		this.state.houses[state.id] = state;
+		await this.save();
+	}
+
+	async getMeta(): Promise<GameMeta> {
+		await this.load();
+		return structuredClone(this.state.meta);
+	}
+
+	async saveMeta(meta: GameMeta): Promise<void> {
+		await this.load();
+		this.state.meta = structuredClone(meta);
 		await this.save();
 	}
 

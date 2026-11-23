@@ -2,6 +2,7 @@ import { MongoClient, type Collection, type Document } from 'mongodb';
 import type { HouseId, Question } from '../../shared/types';
 import type {
 	ConfigRevision,
+	GameMeta,
 	HouseState,
 	LogEntry,
 	Machine,
@@ -20,6 +21,7 @@ export class MongoStore implements Store {
 	private game: Collection<KeyedDoc>;
 	private houses: Collection<KeyedDoc>;
 	private sessions: Collection<KeyedDoc>;
+	private meta: Collection<KeyedDoc>;
 	private logs: Collection<Document>;
 
 	private constructor(client: MongoClient) {
@@ -30,6 +32,7 @@ export class MongoStore implements Store {
 		this.game = client.db('coalition_game').collection('machines');
 		this.houses = client.db('coalition_game').collection('houses');
 		this.sessions = client.db('coalition_game').collection('sessions');
+		this.meta = client.db('coalition_game').collection('meta');
 		this.logs = client.db('coalition_logs').collection('logs');
 	}
 
@@ -71,15 +74,39 @@ export class MongoStore implements Store {
 
 	async getHouse(id: HouseId): Promise<HouseState | null> {
 		const doc = await this.houses.findOne({ _id: id });
-		return doc ? this.strip(doc) : null;
+		return doc ? this.normalizeHouse(doc) : null;
 	}
 
 	async listHouses(): Promise<HouseState[]> {
-		return (await this.houses.find({}).toArray()).map((doc) => this.strip(doc));
+		return (await this.houses.find({}).toArray()).map((doc) => this.normalizeHouse(doc));
+	}
+
+	private normalizeHouse(doc: Record<string, unknown>): HouseState {
+		const house = this.strip<HouseState>(doc);
+		house.solvedRooms ??= [];
+		house.lastClearAt ??= null;
+		return house;
 	}
 
 	async saveHouse(state: HouseState): Promise<void> {
 		await this.houses.replaceOne({ _id: state.id }, { ...state, _id: state.id }, { upsert: true });
+	}
+
+	async getMeta(): Promise<GameMeta> {
+		const doc = await this.meta.findOne({ _id: 'game' });
+		return {
+			startedAt: null,
+			endsAt: null,
+			paused: false,
+			remainingMs: 0,
+			announcement: null,
+			finished: false,
+			...(doc ? this.strip<Partial<GameMeta>>(doc) : {})
+		};
+	}
+
+	async saveMeta(meta: GameMeta): Promise<void> {
+		await this.meta.replaceOne({ _id: 'game' }, { ...meta, _id: 'game' }, { upsert: true });
 	}
 
 	async getConfig(): Promise<Record<string, unknown>> {
