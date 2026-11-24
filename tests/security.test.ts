@@ -5,6 +5,7 @@ import {
 	createRateLimiter,
 	isAllowedOrigin,
 	isInternalAuthorized,
+	isLocalDevOrigin,
 	MAX_WS_MESSAGE_BYTES
 } from '../src/lib/server/security';
 
@@ -31,6 +32,14 @@ describe('WebSocket origin allow-list', () => {
 		expect(isAllowedOrigin('https://evil.example.com', allowed)).toBe(false);
 		expect(isAllowedOrigin('http://localhost:3000.evil.com', allowed)).toBe(false);
 		expect(isAllowedOrigin('not a url', allowed)).toBe(false);
+	});
+
+	test('allows any localhost Vite port in dev but not https or remote hosts', () => {
+		expect(isLocalDevOrigin('http://localhost:5175')).toBe(true);
+		expect(isLocalDevOrigin('http://127.0.0.1:5174')).toBe(true);
+		expect(isLocalDevOrigin('https://localhost:5173')).toBe(false);
+		expect(isLocalDevOrigin('http://192.168.1.155:5173')).toBe(false);
+		expect(isLocalDevOrigin('not a url')).toBe(false);
 	});
 
 	test('allows a LAN Vite page to reach the socket on the same hostname', () => {

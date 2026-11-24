@@ -33,6 +33,7 @@ import {
 	createRateLimiter,
 	isAllowedOrigin,
 	isInternalAuthorized,
+	isLocalDevOrigin,
 	MAX_WS_MESSAGE_BYTES
 } from './src/lib/server/security';
 
@@ -284,8 +285,17 @@ const server = Bun.serve<SocketData>({
 			request.headers.get('upgrade')?.toLowerCase() === 'websocket'
 		) {
 			const requestOrigins = allowedOriginsForRequest(request, allowedOrigins, vitePort);
-			if (!isAllowedOrigin(request.headers.get('origin'), requestOrigins))
+			const origin = request.headers.get('origin');
+			// Dev-only: Vite can auto-pick 5173/5174/5175 when old processes linger.
+			if (env.mode !== 'prod' && origin && isLocalDevOrigin(origin)) {
+				requestOrigins.add(new URL(origin).origin);
+			}
+			if (!isAllowedOrigin(origin, requestOrigins)) {
+				console.warn(
+					`[ws] rejected origin ${origin ?? '(none)'} on ${url.pathname} from ${request.headers.get('host') ?? '(no host)'}`
+				);
 				return new Response('Forbidden origin', { status: 403 });
+			}
 			if (url.pathname === '/ws/spike') {
 				return bunServer.upgrade(request, {
 					data: {
@@ -323,7 +333,10 @@ const server = Bun.serve<SocketData>({
 
 			const token = cookieValue(request.headers.get('cookie'), SESSION_COOKIE);
 			const view = await getSessionView(token);
-			if (!view) return new Response('Unauthorized', { status: 401 });
+			if (!view) {
+				console.warn(`[ws] rejected ${url.pathname}: no valid session cookie`);
+				return new Response('Unauthorized', { status: 401 });
+			}
 
 			return bunServer.upgrade(request, {
 				data: {

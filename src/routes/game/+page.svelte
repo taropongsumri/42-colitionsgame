@@ -54,6 +54,7 @@
 	let canvas: HTMLCanvasElement;
 	let session: Session | null = null;
 	let socket: WebSocket | undefined;
+	let reconnectTimer: ReturnType<typeof setInterval> | null = null;
 	let game: ReturnType<typeof createGame> | undefined;
 
 	let house: HouseId = 'h1';
@@ -212,6 +213,7 @@
 	onDestroy(() => {
 		clearVictoryTimer();
 		clearCutsceneTimer();
+		if (reconnectTimer) clearInterval(reconnectTimer);
 		stopBossAudio();
 	});
 
@@ -239,14 +241,38 @@
 				onEnterBoss: enterBoss
 			});
 
-			const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-			const host = import.meta.env.DEV ? `${location.hostname}:3000` : location.host;
-			socket = new WebSocket(`${protocol}//${host}/ws/play`);
+			const connect = () => {
+				const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+				const host = import.meta.env.DEV ? `${location.hostname}:3000` : location.host;
+				socket = new WebSocket(`${protocol}//${host}/ws/play`);
 
-			socket.onopen = () => (socketStatus = 'open');
-			socket.onerror = () => (socketStatus = 'error');
-			socket.onclose = (event) => (socketStatus = `closed (${event.code})`);
-			socket.onmessage = (event) => {
+				socket.onopen = () => {
+					socketStatus = 'open';
+					if (reconnectTimer) {
+						clearInterval(reconnectTimer);
+						reconnectTimer = null;
+					}
+				};
+				socket.onerror = () => (socketStatus = 'error');
+				socket.onclose = (event) => {
+					socketStatus = `closed (${event.code})`;
+					if (state || disposed || reconnectTimer) return;
+					socketStatus = `closed (${event.code}) · retrying…`;
+					reconnectTimer = setInterval(() => {
+						if (disposed || state) {
+							if (reconnectTimer) clearInterval(reconnectTimer);
+							reconnectTimer = null;
+							return;
+						}
+						if (
+							socket?.readyState === WebSocket.OPEN ||
+							socket?.readyState === WebSocket.CONNECTING
+						)
+							return;
+						connect();
+					}, 2000);
+				};
+				socket.onmessage = (event) => {
 				const message = JSON.parse(String(event.data)) as {
 					type: string;
 					[key: string]: unknown;
@@ -540,7 +566,9 @@
 						feedback = String(message.message);
 						break;
 				}
+				};
 			};
+			connect();
 		};
 
 		void start();
@@ -548,6 +576,7 @@
 			disposed = true;
 			clearInterval(timer);
 			clearCutsceneTimer();
+			if (reconnectTimer) clearInterval(reconnectTimer);
 			socket?.close();
 			stopBossAudio();
 			game?.destroy();

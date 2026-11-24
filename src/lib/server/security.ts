@@ -74,6 +74,19 @@ export function allowedOriginsForRequest(
 	return allowed;
 }
 
+/** Vite may auto-pick 5174/5175 when an old dev page is still open. */
+export function isLocalDevOrigin(origin: string | null): boolean {
+	if (!origin) return false;
+	try {
+		const url = new URL(origin);
+		return (
+			url.protocol === 'http:' && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
+		);
+	} catch {
+		return false;
+	}
+}
+
 /** Cosmetic coordinates are clamped to the current floor before being broadcast. */
 export function clampCosmetic(value: number, max: number): number {
 	if (!Number.isFinite(value)) return 0;
