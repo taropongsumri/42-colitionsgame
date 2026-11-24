@@ -50,7 +50,14 @@ describe('lobby lifecycle', () => {
 		const store = await getStore();
 		const house = await store.getHouse('h1');
 		expect(house).not.toBeNull();
-		house!.boss = { active: true, hp: 123, maxHp: 1000 };
+		house!.boss = {
+			...house!.boss,
+			active: true,
+			bossId: 'staff',
+			hp: 123,
+			maxHp: 1000,
+			mode: 'typing'
+		};
 		await store.saveHouse(house!);
 
 		const machine = await store.getMachine(activeCode);

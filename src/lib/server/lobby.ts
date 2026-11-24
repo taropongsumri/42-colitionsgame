@@ -1,6 +1,6 @@
 import { HOUSE_IDS, type HouseId } from '../shared/types';
 import { getStore, type Store } from './db';
-import type { HouseState, Machine, Session } from './db/types';
+import { emptyBoss, type HouseState, type Machine, type Session } from './db/types';
 
 export const SESSION_COOKIE = 'coalition_session';
 
@@ -25,7 +25,7 @@ async function ensureHouses(store: Store): Promise<void> {
 				status: 'open',
 				hp: 100,
 				score: 0,
-				boss: { active: false, hp: 1000, maxHp: 1000 },
+				boss: emptyBoss(),
 				answerLockUntil: null,
 				adjustmentCount: 0,
 				connected: false,
@@ -227,12 +227,14 @@ export async function onDisconnect(code: string): Promise<void> {
 
 	house.connected = false;
 	if (house.boss.active) {
-		house.boss.hp = house.boss.maxHp;
+		// Disconnecting mid-fight must never preserve damage or audition progress.
+		house.boss = emptyBoss({ hp: house.boss.maxHp, maxHp: house.boss.maxHp });
+		house.answerLockUntil = null;
 		await store.appendLog({
 			at: Date.now(),
 			type: 'boss.reset',
 			house: house.id,
-			message: `Boss HP reset after ${code} disconnected`
+			message: `Boss fight reset after ${code} disconnected`
 		});
 	}
 	await store.saveHouse(house);

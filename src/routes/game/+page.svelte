@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { createGame, type Ghost, type Hud } from '$lib/client/game';
+	import { createGame, type BossOption, type Ghost, type Hud } from '$lib/client/game';
+	import BossFight from '$lib/components/game/BossFight.svelte';
 	import Terminal from '$lib/components/game/Terminal.svelte';
 	import { realTableFor } from '$lib/shared/dungeon';
 	import { HOUSES, HOUSE_IDS, type HouseId } from '$lib/shared/types';
@@ -15,12 +16,29 @@
 		solvedRooms: number[];
 		answerLockUntil: number | null;
 		status: string;
+		boss?: { active: boolean; hp: number; maxHp: number };
 	};
 	type Scoreboard = {
 		rows: { house: HouseId; score: number; room: number; hp: number }[];
 		timeLeftMs: number;
 		paused: boolean;
 		announcement: string | null;
+	};
+	type BossView = {
+		boss: BossOption;
+		words: string[];
+		wordIndex: number;
+		hp: number;
+		maxHp: number;
+		playerHp: number;
+		shield: number;
+		mode: 'idle' | 'typing' | 'attack' | 'audition' | 'stunned';
+		combo: number;
+		auditionLength: number;
+		move: string;
+		lockUntil: number | null;
+		swapReadyAt: number;
+		invulnUntil: number;
 	};
 
 	let canvas: HTMLCanvasElement;
@@ -41,6 +59,9 @@
 	let terminalSolved = false;
 	let notice = '';
 	let lockUntil: number | null = null;
+	let bossOptions: BossOption[] = [];
+	let boss: BossView | null = null;
+	let bossFeedback = '';
 	let now = Date.now();
 	/** The game view is locked to 80% so everyone sees the same amount of map. */
 	const zoomPercent = 80;
@@ -71,6 +92,21 @@
 		send({ type: 'answer', roomId, answer: value });
 	}
 
+	function enterBoss(bossId: string) {
+		if (state && rooms.length && state.solvedRooms.length < rooms.length) return;
+		game?.setPaused(true);
+		bossFeedback = '';
+		send({ type: 'enterBoss', bossId });
+	}
+
+	function closeBoss() {
+		send({ type: 'leaveBoss' });
+		boss = null;
+		bossFeedback = '';
+		game?.setBossActive(false);
+		game?.setPaused(false);
+	}
+
 	onMount(() => {
 		const timer = setInterval(() => (now = Date.now()), 250);
 		let disposed = false;
@@ -91,7 +127,8 @@
 				house,
 				onInteract: (tableId) => send({ type: 'interact', tableId }),
 				onHud: (next) => (hud = next),
-				onMove: (position) => send({ type: 'move', ...position })
+				onMove: (position) => send({ type: 'move', ...position }),
+				onEnterBoss: enterBoss
 			});
 
 			const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -115,10 +152,17 @@
 						lockUntil = state.answerLockUntil;
 						game?.setRoom(state.room);
 						game?.setSolved(state.solvedRooms.map((room) => realTableFor(house, room)));
+						game?.setBossReady(rooms.length > 0 && state.solvedRooms.length >= rooms.length);
+						game?.setBossActive(Boolean(state.boss?.active));
 						break;
 					}
 					case 'dungeon':
 						rooms = message.rooms as typeof rooms;
+						game?.setBossReady(state ? state.solvedRooms.length >= rooms.length : false);
+						break;
+					case 'boss.list':
+						bossOptions = message.bosses as BossOption[];
+						game?.setBossOptions(bossOptions);
 						break;
 					case 'shadows':
 						shadows = message.houses as typeof shadows;
@@ -156,6 +200,132 @@
 						}
 						break;
 					}
+					case 'boss.start': {
+						const view = message as unknown as BossView & {
+							attackAt: number;
+						};
+						boss = {
+							...view,
+							combo: view.combo ?? 0,
+							auditionLength: view.auditionLength ?? 0,
+							move: view.move ?? ''
+						};
+						bossFeedback = '';
+						game?.setBossActive(true);
+						game?.setPaused(true);
+						break;
+					}
+					case 'boss.word': {
+						const result = message as unknown as {
+							correct: boolean;
+							nextWord: string;
+							shield: number;
+							bossHp: number;
+						};
+						if (boss) {
+							if (result.correct) boss.wordIndex += 1;
+							boss.shield = result.shield;
+							boss.hp = result.bossHp;
+						}
+						bossFeedback = result.correct
+							? 'WORD OK · shield charged'
+							: 'MISS · match the highlighted word';
+						break;
+					}
+					case 'boss.attack': {
+						const attack = message as unknown as {
+							immune: boolean;
+							absorbed: number;
+							damage: number;
+							hp: number;
+							shield: number;
+							move: string;
+						};
+						if (boss) {
+							boss.playerHp = attack.hp;
+							boss.shield = attack.shield;
+						}
+						bossFeedback = attack.immune
+							? 'IMMUNE'
+							: attack.absorbed > 0
+								? `${attack.move} · shield absorbed ${Math.round(attack.absorbed)}`
+								: `${attack.move} · -${Math.round(attack.damage)} HP`;
+						break;
+					}
+					case 'boss.audition':
+						if (boss) {
+							boss.mode = 'audition';
+							boss.combo = 0;
+							boss.auditionLength = Number(message.length);
+						}
+						bossFeedback = 'ACCESS GRANTED · AUDITION';
+						break;
+					case 'boss.answerResult': {
+						const result = message as unknown as { message: string };
+						bossFeedback = result.message;
+						break;
+					}
+					case 'boss.hit': {
+						const hit = message as unknown as {
+							move: string;
+							damage: number;
+							bossHp: number;
+							combo: number;
+							finisher?: boolean;
+						};
+						if (boss) {
+							boss.hp = hit.bossHp;
+							boss.combo = hit.combo;
+							boss.move = hit.finisher ? 'FINISH!' : hit.move;
+						}
+						bossFeedback = `${hit.move} · -${Math.round(hit.damage)}`;
+						break;
+					}
+					case 'boss.stun': {
+						const stun = message as unknown as { until: number; penalty: number };
+						if (boss) {
+							boss.mode = 'stunned';
+							boss.playerHp = 0;
+							boss.lockUntil = stun.until;
+						}
+						bossFeedback = `STUNNED · -${stun.penalty} points`;
+						break;
+					}
+					case 'boss.ready': {
+						const ready = message as unknown as { playerHp: number; shield: number };
+						if (boss) {
+							boss.mode = 'typing';
+							boss.playerHp = ready.playerHp;
+							boss.shield = ready.shield;
+						}
+						bossFeedback = 'BACK ONLINE';
+						break;
+					}
+					case 'boss.swap': {
+						const swap = message as unknown as { readyAt: number; invulnUntil: number };
+						if (boss) {
+							boss.swapReadyAt = swap.readyAt;
+							boss.invulnUntil = swap.invulnUntil;
+						}
+						bossFeedback = 'SWAP!';
+						break;
+					}
+					case 'boss.end': {
+						const end = message as unknown as { won: boolean; score: number };
+						notice = end.won ? `BOSS DEFEATED · ${end.score} points` : 'Boss fight left';
+						setTimeout(() => (notice = ''), 5000);
+						boss = null;
+						bossFeedback = '';
+						game?.setBossActive(false);
+						game?.setPaused(false);
+						break;
+					}
+					case 'boss.reset':
+						boss = null;
+						bossFeedback = 'Boss reset · connection lost';
+						game?.setBossActive(false);
+						game?.setPaused(false);
+						break;
 					case 'notice':
 						notice = String(message.text);
 						setTimeout(() => (notice = ''), 5000);
@@ -244,6 +414,32 @@
 			solved={terminalSolved}
 			onClose={closeTerminal}
 			onSubmit={submit}
+		/>
+	{/if}
+
+	{#if boss && boss.boss}
+		<BossFight
+			{house}
+			boss={boss.boss}
+			words={boss.words}
+			wordIndex={boss.wordIndex}
+			hp={boss.hp}
+			maxHp={boss.maxHp}
+			playerHp={boss.playerHp}
+			shield={boss.shield}
+			mode={boss.mode}
+			combo={boss.combo}
+			auditionLength={boss.auditionLength}
+			moveLabel={boss.move}
+			lockUntil={boss.lockUntil}
+			swapReadyAt={boss.swapReadyAt}
+			invulnUntil={boss.invulnUntil}
+			feedback={bossFeedback}
+			onWord={(word) => send({ type: 'typing', word })}
+			onAnswer={(answer) => send({ type: 'auditionSubmit', answer })}
+			onMode={(mode) => send({ type: 'bossMode', mode })}
+			onSwap={() => send({ type: 'bossSwap' })}
+			onLeave={closeBoss}
 		/>
 	{/if}
 </div>

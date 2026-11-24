@@ -6,7 +6,7 @@ import { broadcastNotice } from '$lib/server/ws-control';
 import { HOUSE_IDS, type HouseId } from '$lib/shared/types';
 
 const actions: ControlInput['action'][] = [
-	'start', 'pause', 'resume', 'addTime', 'adjustScore', 'forceUnlock', 'announce', 'end'
+	'start', 'pause', 'resume', 'addTime', 'adjustScore', 'forceUnlock', 'forceBoss', 'announce', 'end'
 ];
 
 export const POST: RequestHandler = async ({ request }) => {

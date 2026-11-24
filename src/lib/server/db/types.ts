@@ -18,13 +18,73 @@ export interface Session {
 	revoked: boolean;
 }
 
+export interface BossAudition {
+	/** Character classes only — the accepted answer is never stored or sent. */
+	classes: number[];
+	index: number;
+	length: number;
+	nextAt: number;
+	beatMs: number;
+	perHit: number;
+	combo: number;
+	move: string | null;
+}
+
+export interface BossState {
+	active: boolean;
+	bossId: string | null;
+	hp: number;
+	maxHp: number;
+	playerHp: number;
+	shield: number;
+	mode: 'idle' | 'typing' | 'attack' | 'audition' | 'stunned';
+	attackAt: number;
+	stunUntil: number | null;
+	lockUntil: number | null;
+	invulnUntil: number;
+	swapReadyAt: number;
+	stunCount: number;
+	penalty: number;
+	wordsDone: number;
+	wordQueue: string[];
+	wordIndex: number;
+	audition: BossAudition | null;
+	startedAt: number;
+}
+
+/** Safe defaults for old saved houses that predate the boss fight. */
+export function emptyBoss(overrides: Partial<BossState> = {}): BossState {
+	return {
+		active: false,
+		bossId: null,
+		hp: 1000,
+		maxHp: 1000,
+		playerHp: 100,
+		shield: 0,
+		mode: 'idle',
+		attackAt: 0,
+		stunUntil: null,
+		lockUntil: null,
+		invulnUntil: 0,
+		swapReadyAt: 0,
+		stunCount: 0,
+		penalty: 0,
+		wordsDone: 0,
+		wordQueue: [],
+		wordIndex: 0,
+		audition: null,
+		startedAt: 0,
+		...overrides
+	};
+}
+
 export interface HouseState {
 	id: HouseId;
 	room: number;
 	status: RoomStatus;
 	hp: number;
 	score: number;
-	boss: { active: boolean; hp: number; maxHp: number };
+	boss: BossState;
 	answerLockUntil: number | null;
 	adjustmentCount: number;
 	connected: boolean;

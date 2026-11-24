@@ -183,6 +183,48 @@ const restored = (await (
 ).json()) as { config: { game: { roomCount: number } } };
 assert(restored.config.game.roomCount === 10, 'defaults restored');
 
+// 7b. Boss phase: lift unlock, server-owned answers, typing and audition.
+const bossConfig = (await (
+	await fetch(`${base}/api/admin/config`, { headers: adminHeaders })
+).json()) as {
+	config: { boss: { bosses: { id: string; answers: string[] }[] } };
+};
+const configuredBoss = bossConfig.config.boss.bosses[0];
+assert(!!configuredBoss && configuredBoss.answers.length > 0, 'boss config is available');
+
+const bossHouse = (await store.getHouse('h1'))!;
+bossHouse.room = 11;
+bossHouse.solvedRooms = Array.from({ length: 10 }, (_, index) => index + 1);
+bossHouse.boss.active = false;
+bossHouse.answerLockUntil = null;
+await store.saveHouse(bossHouse);
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'enterBoss', bossId: configuredBoss.id }));
+const bossStart = await waitForMessage('boss.start', cursor);
+assert(bossStart.boss?.id === configuredBoss.id, 'boss fight started from the lift');
+assert(!JSON.stringify(bossStart).includes('"answers"'), 'boss answers are never sent to the client');
+assert(!JSON.stringify(bossStart).includes(configuredBoss.answers[0]), 'correct answer stays on the server');
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'typing', word: bossStart.words[bossStart.wordIndex] }));
+const bossWord = await waitForMessage('boss.word', cursor);
+assert(bossWord.correct === true, 'server accepts a validated typing word');
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'auditionSubmit', answer: 'definitely-wrong' }));
+const bossDenied = await waitForMessage('boss.answerResult', cursor);
+assert(bossDenied.correct === false, 'wrong boss answer is rejected');
+const afterDenied = (await store.getHouse('h1'))!;
+afterDenied.boss.lockUntil = null;
+afterDenied.answerLockUntil = null;
+await store.saveHouse(afterDenied);
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'auditionSubmit', answer: configuredBoss.answers[0] }));
+const audition = await waitForMessage('boss.audition', cursor);
+assert(audition.length > 0, 'correct boss answer starts a timed audition');
+
 // 8. Kick revokes the session and closes the socket.
 const closed = new Promise<void>((resolve) => {
 	socket.onclose = () => resolve();

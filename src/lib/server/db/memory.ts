@@ -11,6 +11,7 @@ import type {
 	Session,
 	Store
 } from './types';
+import { emptyBoss } from './types';
 
 interface Persisted {
 	machines: Record<string, Machine>;
@@ -77,6 +78,7 @@ export class MemoryStore implements Store {
 			for (const house of Object.values(this.state.houses)) {
 				house.solvedRooms ??= [];
 				house.lastClearAt ??= null;
+				house.boss = emptyBoss(house.boss ?? {});
 			}
 		} catch {
 			this.state = empty();

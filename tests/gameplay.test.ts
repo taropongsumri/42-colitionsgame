@@ -13,6 +13,15 @@ const { bonusPercent, roomPoints, clearPlace } = await import('../src/lib/server
 const { startClock, timeLeftMs } = await import('../src/lib/server/game/clock');
 const { control } = await import('../src/lib/server/game/control');
 const { interact, submitAnswer } = await import('../src/lib/server/game/play');
+const {
+	bossList,
+	bossTick,
+	enterBoss,
+	findBoss,
+	submitBossAnswer,
+	submitBossWord
+} = await import('../src/lib/server/game/boss');
+const { liveConfig } = await import('../src/lib/server/config');
 const { realTableFor, hintTableFor, TABLE_IDS } = await import('../src/lib/shared/dungeon');
 
 const questionIds = Array.from({ length: 30 }, (_, index) => `q${String(index + 1).padStart(2, '0')}`);
@@ -169,5 +178,72 @@ describe('phase 2 gameplay', () => {
 
 		const meta = await startClock();
 		expect(meta.finished).toBe(false);
+	});
+
+	test('boss fight is server-authoritative and bosses can be added to config', async () => {
+		const store = await getStore();
+		const config = await liveConfig();
+		const boss = findBoss(config, 'staff');
+		expect(boss).not.toBeNull();
+		expect(bossList(config)).toMatchObject({
+			type: 'boss.list',
+			bosses: expect.arrayContaining([expect.objectContaining({ id: 'staff' })])
+		});
+
+		const custom = effectiveConfig({
+			boss: { bosses: [{ ...boss!, id: 'extra-boss', name: 'Extra Boss' }] }
+		});
+		expect(custom.boss.bosses).toHaveLength(1);
+		expect(custom.boss.bosses[0].id).toBe('extra-boss');
+
+		const house = (await store.getHouse('h1'))!;
+		house.room = config.game.roomCount + 1;
+		house.solvedRooms = Array.from({ length: config.game.roomCount }, (_, index) => index + 1);
+		house.boss.active = false;
+		house.answerLockUntil = null;
+		const scoreBefore = house.score;
+		await store.saveHouse(house);
+
+		const entered = await enterBoss('h1', 'staff');
+		const start = entered.messages.find((message) => message.type === 'boss.start');
+		expect(start).toMatchObject({ type: 'boss.start', boss: expect.objectContaining({ id: 'staff' }) });
+		expect(JSON.stringify(entered.messages)).not.toContain('"answers"');
+		expect(JSON.stringify(entered.messages)).not.toContain(boss!.answers[0]);
+
+		const fighting = (await store.getHouse('h1'))!;
+		const currentWord = fighting.boss.wordQueue[fighting.boss.wordIndex];
+		const wrongWord = await submitBossWord('h1', 'not-in-the-queue');
+		expect(wrongWord.messages[0]).toMatchObject({ type: 'boss.word', correct: false });
+		const rightWord = await submitBossWord('h1', currentWord);
+		expect(rightWord.messages[0]).toMatchObject({ type: 'boss.word', correct: true });
+
+		const wrongAnswer = await submitBossAnswer('h1', 'definitely-not-the-answer');
+		expect(wrongAnswer.messages[0]).toMatchObject({ type: 'boss.answerResult', correct: false });
+		const unlocked = (await store.getHouse('h1'))!;
+		unlocked.boss.lockUntil = null;
+		unlocked.answerLockUntil = null;
+		await store.saveHouse(unlocked);
+
+		const audition = await submitBossAnswer('h1', boss!.answers[0]);
+		expect(audition.messages).toContainEqual({
+			type: 'boss.audition',
+			length: expect.any(Number),
+			beatSeconds: expect.any(Number),
+			bossHp: expect.any(Number),
+			maxHp: expect.any(Number)
+		});
+		expect(JSON.stringify(audition.messages)).not.toContain(boss!.answers[0]);
+
+		for (let tick = 0; tick < 40; tick += 1) {
+			const state = (await store.getHouse('h1'))!;
+			if (!state.boss.active) break;
+			if (state.boss.audition) state.boss.audition.nextAt = 0;
+			await store.saveHouse(state);
+			await bossTick();
+		}
+
+		const done = (await store.getHouse('h1'))!;
+		expect(done.boss.active).toBe(false);
+		expect(done.score).toBeGreaterThan(scoreBefore);
 	});
 });

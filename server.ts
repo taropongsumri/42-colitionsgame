@@ -1,12 +1,30 @@
 import type { ServerWebSocket } from 'bun';
 import { env } from './config';
-import { encode, parseClientMessage, type ServerMessage } from './src/lib/shared/protocol';
+import {
+	encode,
+	parseClientMessage,
+	type ClientMessage,
+	type ServerMessage
+} from './src/lib/shared/protocol';
 import type { HouseId } from './src/lib/shared/types';
 import { getStore } from './src/lib/server/db';
+import { emptyBoss } from './src/lib/server/db/types';
 import { timeLeftMs } from './src/lib/server/game/clock';
 import { roomStatuses } from './src/lib/server/game/dungeon';
+import {
+	activeStart,
+	bossList,
+	bossTick,
+	enterBoss,
+	resetMessage,
+	setBossMode,
+	submitBossAnswer,
+	submitBossWord,
+	swapBossPlayer
+} from './src/lib/server/game/boss';
 import { interact, submitAnswer } from './src/lib/server/game/play';
 import { getSessionView, markConnected, onDisconnect, SESSION_COOKIE } from './src/lib/server/lobby';
+import { liveConfig } from './src/lib/server/config';
 
 type SocketData = {
 	path: string;
@@ -61,6 +79,16 @@ function broadcast(message: ServerMessage): void {
 	}
 }
 
+function sendToHouse(house: HouseId, message: ServerMessage): void {
+	for (const ws of sockets) {
+		if (ws.data.path !== '/ws/spike' && ws.data.house === house) send(ws, message);
+	}
+}
+
+async function sendScoreboard(): Promise<void> {
+	broadcast(await scoreboard());
+}
+
 function ghostMessage(): ServerMessage {
 	return { type: 'ghosts', houses: [...ghostPositions.values()] };
 }
@@ -97,6 +125,50 @@ async function scoreboard(): Promise<ServerMessage> {
 		paused: meta.paused,
 		announcement: meta.announcement
 	};
+}
+
+async function runBossMessage(
+	house: HouseId,
+	message: Extract<
+		ClientMessage,
+		{
+			type:
+				| 'enterBoss'
+				| 'leaveBoss'
+				| 'typing'
+				| 'auditionSubmit'
+				| 'bossMode'
+				| 'bossSwap';
+		}
+	>
+) {
+	switch (message.type) {
+		case 'enterBoss':
+			return enterBoss(house, message.bossId);
+		case 'typing':
+			return submitBossWord(house, message.word);
+		case 'auditionSubmit':
+			return submitBossAnswer(house, message.answer);
+		case 'bossMode':
+			return setBossMode(house, message.mode);
+		case 'bossSwap':
+			return swapBossPlayer(house);
+		case 'leaveBoss': {
+			const store = await getStore();
+			const state = await store.getHouse(house);
+			if (!state?.boss.active) return { messages: [] };
+			state.boss = emptyBoss();
+			state.answerLockUntil = null;
+			await store.saveHouse(state);
+			return {
+				messages: [
+					{ type: 'boss.end' as const, won: false, score: state.score, bossHp: state.boss.hp },
+					{ type: 'state' as const, state }
+				],
+				notice: `${house} left the boss fight`
+			};
+		}
+	}
 }
 
 const server = Bun.serve<SocketData>({
@@ -165,6 +237,7 @@ const server = Bun.serve<SocketData>({
 				accepted: ws.data.accepted
 			});
 			send(ws, ghostMessage());
+			send(ws, bossList(await liveConfig()));
 
 			if (ws.data.house) {
 				const store = await getStore();
@@ -176,6 +249,8 @@ const server = Bun.serve<SocketData>({
 						current: state.room,
 						rooms: await roomStatuses(state)
 					});
+					const active = activeStart(state, await liveConfig());
+					if (active) send(ws, active);
 				}
 				send(ws, await scoreboard());
 				broadcast(await shadows());
@@ -240,6 +315,24 @@ const server = Bun.serve<SocketData>({
 				return;
 			}
 
+			if (
+				message.type === 'enterBoss' ||
+				message.type === 'typing' ||
+				message.type === 'auditionSubmit' ||
+				message.type === 'bossMode' ||
+				message.type === 'bossSwap' ||
+				message.type === 'leaveBoss'
+			) {
+				const result = await runBossMessage(ws.data.house, message);
+				for (const outgoing of result.messages) send(ws, outgoing);
+				if (result.notice) broadcast({ type: 'notice', text: result.notice });
+				if (result.progressChanged) {
+					broadcast(await shadows());
+					await sendScoreboard();
+				}
+				return;
+			}
+
 			send(ws, {
 				type: 'error',
 				code: 'NOT_IMPLEMENTED',
@@ -249,16 +342,41 @@ const server = Bun.serve<SocketData>({
 		async close(ws) {
 			sockets.delete(ws);
 			if (ws.data.path !== '/ws/spike' && ws.data.code) {
-				if (ws.data.house) {
-					ghostPositions.delete(ws.data.house);
+				const house = ws.data.house;
+				const store = await getStore();
+				const wasBossActive = house ? (await store.getHouse(house))?.boss.active : false;
+				if (house) {
+					ghostPositions.delete(house);
 					broadcast(ghostMessage());
 				}
 				await onDisconnect(ws.data.code);
+				if (house && wasBossActive) {
+					const state = await store.getHouse(house);
+					if (state) sendToHouse(house, resetMessage(state, 'disconnect'));
+				}
 				broadcast(await shadows());
 				broadcast(await scoreboard());
 			}
 		}
 	}
 });
+
+const bossTimer = setInterval(async () => {
+	try {
+		const tick = await bossTick();
+		for (const [house, messages] of tick.byHouse) {
+			for (const message of messages) sendToHouse(house, message);
+		}
+		if (tick.progressChanged) {
+			broadcast(await shadows());
+			await sendScoreboard();
+		}
+	} catch (error) {
+		console.error('[boss] tick failed', error);
+	}
+}, 250);
+
+// Keep the timer from holding up short-lived test processes.
+if (typeof Bun !== 'undefined' && Bun.env.NODE_ENV === 'test') clearInterval(bossTimer);
 
 console.log(`[server] mode=${env.mode} listening on http://localhost:${server.port} (WebSocket on /ws/*)`);

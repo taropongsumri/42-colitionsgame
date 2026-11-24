@@ -32,6 +32,14 @@ export interface Hud {
 	prompt: string | null;
 }
 
+export interface BossOption {
+	id: string;
+	name: string;
+	title: string;
+	question: string;
+	hp: number;
+}
+
 export interface Ghost {
 	house: HouseId;
 	floor: number;
@@ -45,6 +53,7 @@ export type GameOptions = {
 	onInteract?: (tableId: string) => void;
 	onHud?: (hud: Hud) => void;
 	onMove?: (position: { floor: number; x: number; y: number }) => void;
+	onEnterBoss?: (bossId: string) => void;
 };
 
 type Target = { floor: number; x: number; y: number };
@@ -91,6 +100,10 @@ export function createGame(options: GameOptions) {
 	const keys = new Set<string>();
 	const ghosts = new Map<HouseId, GhostTrack>();
 	const solved = new Set<string>();
+	let bossOptions: BossOption[] = [];
+	let bossSelected = 0;
+	let bossReady = false;
+	let bossActive = false;
 
 	let currentRoom = 1;
 	let highlight: string | null = questionTableIdForRoom(1);
@@ -257,7 +270,19 @@ export function createGame(options: GameOptions) {
 		}
 
 		if (transport?.kind === 'elevator') {
-			emitHud('Lift reserved for the boss phase');
+			if (!bossReady || !bossOptions.length) {
+				emitHud(bossReady ? 'Lift waiting for boss config' : 'Lift locked · clear every plug first');
+				return;
+			}
+			const option = bossOptions[bossSelected % bossOptions.length];
+			const prompt = `E · Fight ${option.name}${bossOptions.length > 1 ? ` · Q · next (${bossSelected + 1}/${bossOptions.length})` : ''}`;
+			emitHud(prompt);
+			if (pressed === 'q' && bossOptions.length > 1) {
+				bossSelected = (bossSelected + 1) % bossOptions.length;
+				emitHud(`Boss selected · ${bossOptions[bossSelected].name}`);
+			} else if (pressed === 'e' && !bossActive) {
+				options.onEnterBoss?.(option.id);
+			}
 			return;
 		}
 
@@ -361,6 +386,17 @@ export function createGame(options: GameOptions) {
 		setPaused(next: boolean) {
 			paused = next;
 			if (next) interactQueued = null;
+		},
+		setBossOptions(list: BossOption[]) {
+			bossOptions = list;
+			if (bossSelected >= list.length) bossSelected = 0;
+		},
+		setBossReady(ready: boolean) {
+			bossReady = ready;
+		},
+		setBossActive(active: boolean) {
+			if (bossActive !== active) emitHud(null);
+			bossActive = active;
 		},
 		setGhosts(list: Ghost[]) {
 			const now = performance.now();

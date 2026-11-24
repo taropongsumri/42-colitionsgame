@@ -9,6 +9,7 @@ import type {
 	Session,
 	Store
 } from './types';
+import { emptyBoss } from './types';
 
 type KeyedDoc = { _id: string; [key: string]: unknown };
 
@@ -85,6 +86,7 @@ export class MongoStore implements Store {
 		const house = this.strip<HouseState>(doc);
 		house.solvedRooms ??= [];
 		house.lastClearAt ??= null;
+		house.boss = emptyBoss(house.boss ?? {});
 		return house;
 	}
 

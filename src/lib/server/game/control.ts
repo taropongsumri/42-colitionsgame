@@ -1,9 +1,19 @@
 import type { HouseId } from '../../shared/types';
 import { getStore } from '../db';
 import { startClock, timeLeftMs } from './clock';
+import { liveConfig } from '../config';
 
 export interface ControlInput {
-	action: 'start' | 'pause' | 'resume' | 'addTime' | 'adjustScore' | 'forceUnlock' | 'announce' | 'end';
+	action:
+		| 'start'
+		| 'pause'
+		| 'resume'
+		| 'addTime'
+		| 'adjustScore'
+		| 'forceUnlock'
+		| 'forceBoss'
+		| 'announce'
+		| 'end';
 	house?: HouseId;
 	amount?: number;
 	minutes?: number;
@@ -70,6 +80,23 @@ export async function control(input: ControlInput): Promise<{ notice?: string }>
 				type: 'admin.unlock',
 				house: house.id,
 				message: `Room ${house.room - 1} force-unlocked`
+			});
+			break;
+		}
+		case 'forceBoss': {
+			if (!input.house) return {};
+			const house = await store.getHouse(input.house);
+			if (!house) return {};
+			const { game } = await liveConfig();
+			house.solvedRooms = Array.from({ length: game.roomCount }, (_, index) => index + 1);
+			house.room = game.roomCount + 1;
+			house.status = 'solved';
+			await store.saveHouse(house);
+			await store.appendLog({
+				at: Date.now(),
+				type: 'admin.bossUnlock',
+				house: house.id,
+				message: 'Lift unlocked by admin'
 			});
 			break;
 		}

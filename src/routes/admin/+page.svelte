@@ -10,6 +10,27 @@
 		lastSeen: number | null;
 	};
 	type House = { id: HouseId; room: number; hp: number; score: number; connected: boolean };
+	type BossEntry = {
+		raw: Record<string, unknown>;
+		id: string;
+		name: string;
+		title: string;
+		question: string;
+		answers: string;
+		words: string;
+		hp: number;
+		playerHp: number;
+		shieldPerWord: number;
+		shieldMax: number;
+		chipPerWord: number;
+		attackEverySeconds: number;
+		attackDamage: number;
+		wrongHealPercent: number;
+		counterDamage: number;
+		bpm: number;
+		stunSeconds: number;
+		stunPenalty: number;
+	};
 
 	let password = '';
 	let machines: Machine[] = [];
@@ -24,8 +45,58 @@
 	let scoreReason = '';
 	let minutes = 5;
 	let announcement = '';
+	let bosses: BossEntry[] = [];
 
 	const headers = () => ({ 'x-admin-password': password, 'content-type': 'application/json' });
+
+	function rawBoss(entry: BossEntry) {
+		const number = (key: keyof BossEntry, fallback: number) => Number(entry[key] || fallback);
+		return {
+			...entry.raw,
+			id: entry.id.trim() || `boss-${Date.now().toString(36)}`,
+			name: entry.name || 'New boss',
+			title: entry.title || 'BOSS',
+			question: entry.question || 'Type the access phrase.',
+			answers: entry.answers.split(',').map((value) => value.trim()).filter(Boolean),
+			wordPool: entry.words.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean),
+			hp: number('hp', 1000),
+			playerHp: number('playerHp', 100),
+			shieldPerWord: number('shieldPerWord', 10),
+			shieldMax: number('shieldMax', 100),
+			chipPerWord: number('chipPerWord', 5),
+			attackEverySeconds: number('attackEverySeconds', 3),
+			attackDamage: number('attackDamage', 15),
+			wrongHealPercent: number('wrongHealPercent', 30),
+			counterDamage: number('counterDamage', 30),
+			bpm: number('bpm', 140),
+			stunSeconds: number('stunSeconds', 30),
+			stunPenalty: number('stunPenalty', 50)
+		};
+	}
+
+	function bossToEntry(value: Record<string, unknown>): BossEntry {
+		return {
+			raw: value,
+			id: String(value.id ?? ''),
+			name: String(value.name ?? ''),
+			title: String(value.title ?? ''),
+			question: String(value.question ?? ''),
+			answers: (value.answers as string[] | undefined)?.join(', ') ?? '',
+			words: (value.wordPool as string[] | undefined)?.join(' ') ?? '',
+			hp: Number(value.hp ?? 1000),
+			playerHp: Number(value.playerHp ?? 100),
+			shieldPerWord: Number(value.shieldPerWord ?? 10),
+			shieldMax: Number(value.shieldMax ?? 100),
+			chipPerWord: Number(value.chipPerWord ?? 5),
+			attackEverySeconds: Number(value.attackEverySeconds ?? 3),
+			attackDamage: Number(value.attackDamage ?? 15),
+			wrongHealPercent: Number(value.wrongHealPercent ?? 30),
+			counterDamage: Number(value.counterDamage ?? 30),
+			bpm: Number(value.bpm ?? 140),
+			stunSeconds: Number(value.stunSeconds ?? 30),
+			stunPenalty: Number(value.stunPenalty ?? 50)
+		};
+	}
 
 	async function load() {
 		if (!password) return;
@@ -43,8 +114,42 @@
 	async function loadConfig() {
 		const response = await fetch('/api/admin/config', { headers: headers() });
 		if (!response.ok) return;
-		const data = (await response.json()) as { config: unknown };
+		const data = (await response.json()) as { config: Record<string, unknown> };
 		configText = JSON.stringify(data.config, null, 2);
+		const bossConfig = (data.config.boss ?? {}) as Record<string, unknown>;
+		bosses = ((bossConfig.bosses ?? []) as Record<string, unknown>[]).map(bossToEntry);
+	}
+
+	async function saveBosses() {
+		const config = JSON.parse(configText) as Record<string, unknown>;
+		const bossConfig = (config.boss ?? {}) as Record<string, unknown>;
+		config.boss = { ...bossConfig, bosses: bosses.map(rawBoss) };
+		configText = JSON.stringify(config, null, 2);
+		const response = await fetch('/api/admin/config', {
+			method: 'PUT',
+			headers: headers(),
+			body: JSON.stringify({ config })
+		});
+		message = response.ok ? `${bosses.length} bosses saved` : 'boss config rejected';
+		await loadConfig();
+	}
+
+	function addBoss() {
+		bosses = [
+			...bosses,
+			bossToEntry({
+				id: `boss-${Date.now().toString(36)}`,
+				name: 'New boss',
+				title: 'NEW BOSS',
+				question: 'Type the access phrase.',
+				answers: ['answer'],
+				wordPool: ['code', 'door', 'room', 'light']
+			})
+		];
+	}
+
+	function removeBoss(index: number) {
+		bosses = bosses.filter((_, position) => position !== index);
 	}
 
 	async function action(code: string, method: string, body?: unknown) {
@@ -182,10 +287,51 @@
 			{#each HOUSE_IDS as id}<option value={id}>{id}</option>{/each}
 		</select>
 		<button onclick={() => control('forceUnlock', { house: unlockHouse })}>Force unlock room</button>
+		<button onclick={() => control('forceBoss', { house: unlockHouse })}>Unlock boss lift</button>
 	</div>
 	<div class="controls">
 		<input bind:value={announcement} placeholder="message to all players" />
 		<button onclick={() => control('announce', { text: announcement })}>Announce</button>
+	</div>
+</section>
+
+<section>
+	<h2>Bosses</h2>
+	<p>
+		Add as many bosses as you want. Players choose one with <kbd>Q</kbd> at the lift and fight with
+		<kbd>E</kbd>. Answers are server-only and are never sent to the game client.
+	</p>
+	{#each bosses as boss, index}
+		<article class="boss">
+			<header>
+				<strong>{boss.name || boss.id || `Boss ${index + 1}`}</strong>
+				<button onclick={() => removeBoss(index)}>Remove</button>
+			</header>
+			<div class="fields">
+				<label>ID<input bind:value={boss.id} /></label>
+				<label>Name<input bind:value={boss.name} /></label>
+				<label>Title<input bind:value={boss.title} /></label>
+				<label>Question<input bind:value={boss.question} /></label>
+				<label class="wide">Answers (comma separated, secret)<input bind:value={boss.answers} /></label>
+				<label class="wide">Typing words<input bind:value={boss.words} /></label>
+				<label>HP<input type="number" bind:value={boss.hp} /></label>
+				<label>Player HP<input type="number" bind:value={boss.playerHp} /></label>
+				<label>Shield / word<input type="number" bind:value={boss.shieldPerWord} /></label>
+				<label>Shield max<input type="number" bind:value={boss.shieldMax} /></label>
+				<label>Chip / word<input type="number" bind:value={boss.chipPerWord} /></label>
+				<label>Attack every (s)<input type="number" step="0.1" bind:value={boss.attackEverySeconds} /></label>
+				<label>Attack damage<input type="number" bind:value={boss.attackDamage} /></label>
+				<label>Wrong heal (%)<input type="number" bind:value={boss.wrongHealPercent} /></label>
+				<label>Counter damage<input type="number" bind:value={boss.counterDamage} /></label>
+				<label>Combo BPM<input type="number" bind:value={boss.bpm} /></label>
+				<label>Stun (s)<input type="number" bind:value={boss.stunSeconds} /></label>
+				<label>Stun penalty<input type="number" bind:value={boss.stunPenalty} /></label>
+			</div>
+		</article>
+	{/each}
+	<div class="controls">
+		<button onclick={addBoss}>Add boss</button>
+		<button onclick={saveBosses}>Save bosses</button>
 	</div>
 </section>
 
@@ -220,6 +366,13 @@
 	textarea, pre { width: 100%; box-sizing: border-box; }
 	section { margin: 1.5rem 0; }
 	.controls { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; margin: 0.4rem 0; }
+	.boss { border: 1px solid #3a3140; padding: 0.6rem; margin: 0.6rem 0; background: #1b1521; }
+	.boss header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+	.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
+	.fields .wide { grid-column: 1 / -1; }
+	.fields label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.75rem; color: #9f95a6; }
+	.fields input { width: 100%; }
+	kbd { border: 1px solid #5b4d70; padding: 0 4px; }
 	.message { color: #f5b301; }
 	a { color: #8b5cf6; }
 </style>
