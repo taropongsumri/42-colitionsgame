@@ -12,7 +12,7 @@ import {
 } from '../shared/map';
 import { HOUSES, type HouseId } from '../shared/types';
 import { move, transportAt } from './world';
-import { renderFloor, type Actor, type Viewport } from './render';
+import { drawGoalPointer, renderFloor, type Actor, type Viewport } from './render';
 
 const ANIMALS: Record<HouseId, string> = {
 	h1: 'scorpion',
@@ -25,6 +25,7 @@ const BASE_W = 320;
 const BASE_H = 180;
 const BACKING_SCALE = 2;
 const SPEED = 72; // world pixels per second
+const SPRINT_SPEED = 126; // Shift + direction: faster, with a running animation
 const PLUG_REACH = 26;
 const FADE = 0.18;
 const PET_LAG = 0.3;
@@ -33,6 +34,7 @@ export interface Hud {
 	floor: number;
 	plug: number;
 	prompt: string | null;
+	sprinting: boolean;
 }
 
 export interface BossOption {
@@ -122,6 +124,9 @@ export function createGame(options: GameOptions) {
 	let zoom = 0.8;
 	let t = 0;
 	let walkT = 0;
+	let sprinting = false;
+	let facing = false;
+	let runDir = { x: 1, y: 0 };
 	let sendT = 0;
 	let interactQueued: 'e' | 'q' | null = null;
 	let lastHud = '';
@@ -153,7 +158,7 @@ export function createGame(options: GameOptions) {
 	}
 
 	function emitHud(prompt: string | null) {
-		const hud = { floor: map.floor, plug: currentPlug, prompt };
+		const hud = { floor: map.floor, plug: currentPlug, prompt, sprinting };
 		const key = JSON.stringify(hud);
 		if (key !== lastHud) {
 			lastHud = key;
@@ -222,9 +227,14 @@ export function createGame(options: GameOptions) {
 		if (keys.has('s') || keys.has('arrowdown')) dy += 1;
 		if (dx || dy) {
 			const length = Math.hypot(dx, dy);
-			move(map, pos, (dx / length) * SPEED * dt, (dy / length) * SPEED * dt);
-			walkT += dt;
+			const speed = keys.has('shift') ? SPRINT_SPEED : SPEED;
+			move(map, pos, (dx / length) * speed * dt, (dy / length) * speed * dt);
+			if (dx) facing = dx < 0;
+			runDir = { x: dx / length, y: dy / length };
+			// A faster gait drives the bob, lean, dust and afterimages while sprinting.
+			walkT += dt * (speed === SPRINT_SPEED ? 1.9 : 1);
 		} else walkT = 0;
+		sprinting = keys.has('shift') && walkT > 0;
 
 		trail.push({ t, x: pos.x, y: pos.y });
 		while (trail.length > 2 && trail[0].t < t - PET_LAG) trail.shift();
@@ -330,8 +340,28 @@ export function createGame(options: GameOptions) {
 			});
 		}
 		actors.push(
-			{ x: pet.x, y: pet.y, img: petImage, flip: pet.flip, bob: Math.round(Math.sin(t * 6)) },
-			{ x: pos.x, y: pos.y, img: playerImage, bob }
+			{
+				x: pet.x,
+				y: pet.y,
+				img: petImage,
+				flip: pet.flip,
+				bob: Math.round(Math.sin((sprinting ? walkT * 1.4 : t) * 6)),
+				sprint: sprinting,
+				gait: walkT,
+				dirX: runDir.x,
+				dirY: runDir.y
+			},
+			{
+				x: pos.x,
+				y: pos.y,
+				img: playerImage,
+				bob,
+				flip: facing,
+				sprint: sprinting,
+				gait: walkT,
+				dirX: runDir.x,
+				dirY: runDir.y
+			}
 		);
 
 		renderFloor(ctx, map, cam, view, actors, t, {
@@ -341,6 +371,19 @@ export function createGame(options: GameOptions) {
 			next: nextPlug,
 			background: backgroundImage
 		});
+
+		// Always show where to go next: the unsolved plug for this room, or the lift
+		// when the floor boss gate is open. The plug itself also gets a GO marker.
+		const targetPlug = map.props.find(
+			(prop) => prop.roomId === highlight && !solved.has(prop.roomId)
+		);
+		const lift = bossReady ? map.props.find((prop) => prop.kind === 'elevator') : null;
+		const goal = targetPlug
+			? { x: targetPlug.x, y: targetPlug.y }
+			: lift
+				? { x: lift.x, y: lift.y }
+				: null;
+		drawGoalPointer(ctx, cam, view, pos, goal, t);
 
 		if (fade) {
 			const alpha = fade.t < FADE ? fade.t / FADE : 1 - (fade.t - FADE) / FADE;
@@ -409,7 +452,12 @@ export function createGame(options: GameOptions) {
 		},
 		setPaused(next: boolean) {
 			paused = next;
-			if (next) interactQueued = null;
+			if (next) {
+				keys.clear();
+				sprinting = false;
+				walkT = 0;
+				interactQueued = null;
+			}
 		},
 		setBossOptions(list: BossOption[]) {
 			bossOptions = list;

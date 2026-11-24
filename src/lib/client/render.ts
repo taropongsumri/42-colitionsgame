@@ -22,6 +22,11 @@ export type Actor = {
 	/** Optional house label drawn above full-colour actors. */
 	name?: string;
 	nameColor?: string;
+	/** Sprint state drives the lean, dust, afterimages and faster gait. */
+	sprint?: boolean;
+	gait?: number;
+	dirX?: number;
+	dirY?: number;
 };
 export type RenderState = {
 	solved: Set<string>;
@@ -100,6 +105,66 @@ function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number
 	ctx.fillStyle = color;
 	ctx.fillText(text, x, y);
 	ctx.restore();
+}
+
+function drawDownArrow(
+	ctx: CanvasRenderingContext2D,
+	cx: number,
+	top: number,
+	color: string,
+	glow: string
+) {
+	ctx.save();
+	ctx.fillStyle = color;
+	ctx.shadowColor = glow;
+	ctx.shadowBlur = 8;
+	ctx.beginPath();
+	ctx.moveTo(cx, top + 12);
+	ctx.lineTo(cx - 6, top + 2);
+	ctx.lineTo(cx - 2, top + 2);
+	ctx.lineTo(cx - 2, top - 5);
+	ctx.lineTo(cx + 2, top - 5);
+	ctx.lineTo(cx + 2, top + 2);
+	ctx.lineTo(cx + 6, top + 2);
+	ctx.closePath();
+	ctx.fill();
+	ctx.restore();
+}
+
+/** Small compass arrow above the player, pointing at the plug or lift to visit. */
+export function drawGoalPointer(
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	view: Viewport,
+	from: { x: number; y: number },
+	to: { x: number; y: number } | null,
+	t: number
+) {
+	if (!to) return;
+	const dx = to.x - from.x, dy = to.y - from.y;
+	const distance = Math.hypot(dx, dy);
+	if (distance < 30) return;
+	const angle = Math.atan2(dy, dx);
+	const px = Math.round(from.x - cam.x + Math.cos(angle) * 15);
+	const py = Math.round(from.y - cam.y - 16 + Math.sin(angle) * 10 + Math.sin(t * 4) * 2);
+	const sx = Math.max(8, Math.min(view.w - 8, px));
+	const sy = Math.max(8, Math.min(view.h - 8, py));
+	ctx.save();
+	ctx.translate(sx, sy);
+	ctx.rotate(angle);
+	ctx.globalAlpha = 0.92;
+	ctx.fillStyle = '#ffd166';
+	ctx.shadowColor = '#ffb020';
+	ctx.shadowBlur = 7;
+	ctx.beginPath();
+	ctx.moveTo(8, 0);
+	ctx.lineTo(-4, -5);
+	ctx.lineTo(-1, 0);
+	ctx.lineTo(-4, 5);
+	ctx.closePath();
+	ctx.fill();
+	ctx.restore();
+	label(ctx, `${Math.round(distance / TILE)}m`, sx, sy - 11, '#ffe6a8', 0.85);
 }
 
 function drawOutdoorTile(ctx: CanvasRenderingContext2D, c: string, x: number, y: number, tx: number, ty: number) {
@@ -290,24 +355,16 @@ function drawTable(ctx: CanvasRenderingContext2D, prop: Prop, cam: Camera, st: R
 			const by = cy - 22 + Math.round(Math.sin(t * 5));
 			ctx.fillRect(cx - 1, by, 3, 3); ctx.fillRect(cx, by + 3, 1, 2);
 		}
+		if (current && !solved && st.next !== prop.roomId) {
+			// Persistent marker for the plug the player still has to visit.
+			const gy = cy - 30 + Math.round(Math.sin(t * 4) * 2);
+			drawDownArrow(ctx, cx, gy, '#ffd166', '#ffb020');
+			label(ctx, 'GO', cx, gy - 11, '#ffe6a8', 0.95);
+		}
 		if (st.next === prop.roomId) {
-			// Red arrow marking the next plug after a correct answer.
+			// Red arrow marking the next plug right after a correct answer.
 			const ay = cy - 30 + Math.round(Math.sin(t * 6) * 3);
-			ctx.save();
-			ctx.fillStyle = '#ff3b4e';
-			ctx.shadowColor = '#ff3b4e';
-			ctx.shadowBlur = 8;
-			ctx.beginPath();
-			ctx.moveTo(cx, ay + 12);
-			ctx.lineTo(cx - 6, ay + 2);
-			ctx.lineTo(cx - 2, ay + 2);
-			ctx.lineTo(cx - 2, ay - 5);
-			ctx.lineTo(cx + 2, ay - 5);
-			ctx.lineTo(cx + 2, ay + 2);
-			ctx.lineTo(cx + 6, ay + 2);
-			ctx.closePath();
-			ctx.fill();
-			ctx.restore();
+			drawDownArrow(ctx, cx, ay, '#ff3b4e', '#ff3b4e');
 			label(ctx, 'NEXT', cx, ay - 11, '#ff6b7a', 0.95);
 		}
 	}
@@ -378,7 +435,7 @@ function drawTransport(
 	}
 }
 
-function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, cam: Camera) {
+function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, cam: Camera, t: number) {
 	const x = Math.round(actor.x - cam.x), y = Math.round(actor.y - cam.y);
 	if (actor.orb) {
 		const pulse = 0.8 + Math.sin(performance.now() / 320 + actor.x) * 0.2;
@@ -440,12 +497,52 @@ function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, cam: Camera) {
 	}
 	ctx.save();
 	ctx.globalAlpha = actor.alpha ?? 1;
+	const gait = actor.gait ?? t * 6;
+	const bounce = actor.sprint
+		? -1 - Math.round(Math.abs(Math.sin(gait * 14)) * 2)
+		: actor.bob ?? 0;
+	if (actor.sprint) {
+		const dirX = actor.dirX ?? 0, dirY = actor.dirY ?? 0;
+		// Dust puffs and two faded copies sell the run without an extra sprite sheet.
+		for (let i = 0; i < 3; i += 1) {
+			const phase = (((gait * 3.4 + i / 3) % 1) + 1) % 1;
+			ctx.save();
+			ctx.globalAlpha = (actor.alpha ?? 1) * (1 - phase) * 0.45;
+			ellipse(
+				ctx,
+				x - dirX * (4 + phase * 11),
+				y - dirY * (phase * 5) + 1,
+				2 + phase * 3,
+				1 + phase * 1.4,
+				'#e4dccb'
+			);
+			ctx.restore();
+		}
+		for (let i = 2; i >= 1; i -= 1) {
+			ctx.save();
+			ctx.globalAlpha = (actor.alpha ?? 1) * (0.22 - i * 0.07);
+			const ax = x - dirX * i * 4;
+			const ay = y - dirY * i * 3;
+			if (actor.flip) {
+				ctx.translate(ax, 0);
+				ctx.scale(-1, 1);
+				ctx.drawImage(actor.img, Math.round(-width / 2), ay - height + bounce);
+			} else {
+				ctx.drawImage(actor.img, Math.round(ax - width / 2), ay - height + bounce);
+			}
+			ctx.restore();
+		}
+		ctx.translate(x, y);
+		ctx.rotate(dirX * 0.1);
+		ctx.scale(1, 0.94 + Math.abs(Math.sin(gait * 14)) * 0.09);
+		ctx.translate(-x, -y);
+	}
 	if (actor.flip) {
 		ctx.translate(x, 0);
 		ctx.scale(-1, 1);
-		ctx.drawImage(actor.img, Math.round(-width / 2), y - height + (actor.bob ?? 0));
+		ctx.drawImage(actor.img, Math.round(-width / 2), y - height + bounce);
 	} else {
-		ctx.drawImage(actor.img, Math.round(x - width / 2), y - height + (actor.bob ?? 0));
+		ctx.drawImage(actor.img, Math.round(x - width / 2), y - height + bounce);
 	}
 	ctx.restore();
 	if (actor.name) label(ctx, actor.name, x, y - height - 4, actor.nameColor ?? '#ffffff');
@@ -505,7 +602,7 @@ export function renderFloor(
 		else if (prop.kind === 'chair') items.push({ y: prop.y + 1, draw: () => drawChair(ctx, prop, cam) });
 		else if (prop.kind === 'tree') items.push({ y: prop.y, draw: () => drawTree(ctx, prop, cam, t) });
 	}
-	for (const actor of actors) items.push({ y: actor.y, draw: () => drawActor(ctx, actor, cam) });
+	for (const actor of actors) items.push({ y: actor.y, draw: () => drawActor(ctx, actor, cam, t) });
 	items.sort((a, b) => a.y - b.y);
 	for (const item of items) item.draw();
 

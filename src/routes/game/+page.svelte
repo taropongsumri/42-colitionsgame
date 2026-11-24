@@ -68,7 +68,7 @@
 	}[] = [];
 	let scoreboard: Scoreboard | null = null;
 	let terminal: { prompt: string; hint: string | null } | null = null;
-	let hud: Hud = { floor: 1, plug: 1, prompt: null };
+	let hud: Hud = { floor: 1, plug: 1, prompt: null, sprinting: false };
 	let feedback = '';
 	let terminalRoomId: string | null = null;
 	let terminalSolved = false;
@@ -571,7 +571,9 @@
 			<span>HP {state?.hp ?? 100}</span>
 			<span class="score">{state?.score ?? 0} pts</span>
 			<span class="clock">{timeLeft}</span>
+			<span class:run={hud.sprinting}>{hud.sprinting ? 'RUN' : 'WALK'}</span>
 		</div>
+		<div class="controls">WASD move · Shift sprint · E interact · Q back</div>
 		<div class="players">
 			{#each HOUSE_IDS as id}
 				{@const shadow = shadows.find((item) => item.house === id)}
@@ -713,6 +715,8 @@
 	.stats { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.25rem; }
 	.stats .score { color: #6ee7a8; }
 	.stats .clock { color: #ffd166; font-weight: 700; }
+	.stats .run { color: #ff7a45; font-weight: 700; text-shadow: 0 0 8px rgba(255, 122, 69, 0.7); }
+	.controls { margin-top: 0.2rem; color: #9f95a6; font-size: 0.6rem; letter-spacing: 0.02em; }
 	.players { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 0.2rem; font-size: 0.65rem; }
 	.links { margin-top: 0.35rem; pointer-events: auto; }
 	a { color: #c4b5fd; }
@@ -793,6 +797,7 @@
 		.house { font-size: 0.78rem; }
 		.house span { font-size: 0.6rem; }
 		.stats { gap: 0.35rem 0.6rem; }
+		.controls { font-size: 0.54rem; }
 		.players { gap: 0.45rem; font-size: 0.58rem; }
 		.rooms span { min-width: 1.25rem; height: 1.25rem; font-size: 0.58rem; }
 		.panel { padding: 1.4rem; }
@@ -801,6 +806,7 @@
 	@media (max-width: 420px) {
 		.top-left { max-width: 78vw; }
 		.players { display: none; }
+		.controls { display: none; }
 		.stats { flex-direction: column; gap: 0.15rem; }
 		.rooms { gap: 0.18rem; }
 		.rooms span { min-width: 1.15rem; height: 1.15rem; }
@@ -808,7 +814,8 @@
 
 	@media (max-height: 520px) {
 		.top-left .brand,
-		.top-left .players { display: none; }
+		.top-left .players,
+		.top-left .controls { display: none; }
 		.prompt { bottom: calc(2.25rem + env(safe-area-inset-bottom)); }
 		.toast { top: calc(4.5rem + env(safe-area-inset-top)); }
 	}
