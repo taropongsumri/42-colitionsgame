@@ -183,11 +183,59 @@ const restored = (await (
 ).json()) as { config: { game: { roomCount: number } } };
 assert(restored.config.game.roomCount === 10, 'defaults restored');
 
+// 7a. Per-boss switches survive the live config round trip.
+const bossDefaults = (await (
+	await fetch(`${base}/api/admin/config`, { headers: adminHeaders })
+).json()) as {
+	config: { boss: { bosses: Record<string, unknown>[] } };
+};
+const defaultBoss = bossDefaults.config.boss.bosses[0];
+assert(!!defaultBoss, 'default boss config is available');
+assert(
+	typeof defaultBoss.showNextWords === 'boolean' && typeof defaultBoss.comboBreakStackPercent === 'number',
+	'per-boss combo settings are configured'
+);
+const toggle = await fetch(`${base}/api/admin/config`, {
+	method: 'PUT',
+	headers: adminHeaders,
+	body: JSON.stringify({
+		config: {
+			boss: {
+				bosses: [{ ...defaultBoss, showNextWords: false, comboBreakStackPercent: 25 }]
+			}
+		}
+	})
+});
+assert(toggle.ok, 'per-boss settings saved');
+const toggledConfig = (await (
+	await fetch(`${base}/api/admin/config`, { headers: adminHeaders })
+).json()) as {
+	config: { boss: { bosses: { showNextWords: boolean; comboBreakStackPercent: number }[] } };
+};
+assert(toggledConfig.config.boss.bosses[0].showNextWords === false, 'next-word preview can be disabled per boss');
+assert(toggledConfig.config.boss.bosses[0].comboBreakStackPercent === 25, 'combo stack damage can be configured per boss');
+const resetBoss = await fetch(`${base}/api/admin/config/reset`, {
+	method: 'POST',
+	headers: adminHeaders
+});
+assert(resetBoss.ok, 'config reset after per-boss test');
+
 // 7b. Boss phase: lift unlock, server-owned answers, typing and audition.
 const bossConfig = (await (
 	await fetch(`${base}/api/admin/config`, { headers: adminHeaders })
 ).json()) as {
-	config: { boss: { bosses: { id: string; answers: string[] }[] } };
+	config: {
+		boss: {
+			bosses: {
+				id: string;
+				answers: string[];
+				showNextWords: boolean;
+				comboBreakEvery: number;
+				comboBreakPercent: number;
+				comboBreakStackPercent: number;
+			}[];
+		};
+	};
 };
 const configuredBoss = bossConfig.config.boss.bosses[0];
 assert(!!configuredBoss && configuredBoss.answers.length > 0, 'boss config is available');
@@ -205,6 +253,10 @@ const bossStart = await waitForMessage('boss.start', cursor);
 assert(bossStart.boss?.id === configuredBoss.id, 'boss fight started from the lift');
 assert(!JSON.stringify(bossStart).includes('"answers"'), 'boss answers are never sent to the client');
 assert(!JSON.stringify(bossStart).includes(configuredBoss.answers[0]), 'correct answer stays on the server');
+assert(bossStart.comboBreakEvery === configuredBoss.comboBreakEvery, 'combo break interval reaches the client');
+assert(bossStart.showNextWords === configuredBoss.showNextWords, 'next-word preview setting reaches the client');
+const expectedBreakPercent = (tier: number) =>
+	configuredBoss.comboBreakPercent + (tier - 1) * configuredBoss.comboBreakStackPercent;
 
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'typing', word: bossStart.words[bossStart.wordIndex] }));
@@ -238,16 +290,57 @@ socket.send(JSON.stringify({ type: 'bossAttack' }));
 const cooling = await waitForMessage('boss.playerAttack', cursor);
 assert(cooling.reason === 'COOLDOWN' && cooling.damage === 0, 'rapid attacks are rejected by cooldown');
 
-// Typing must keep working after the initial word pool runs out.
-for (let step = 0; step < bossStart.words.length + 4; step += 1) {
+// Typing keeps working past the initial pool, and combo tiers scale their hit.
+for (let step = 0; step < bossStart.words.length; step += 1) {
 	const current = (await store.getHouse('h1'))!;
+	const combo = current.boss.wordCombo + 1;
 	const word = current.boss.wordQueue[current.boss.wordIndex];
 	cursor = messages.length;
 	socket.send(JSON.stringify({ type: 'typing', word }));
 	const chained = await waitForMessage('boss.word', cursor, (m) => m.type === 'boss.word' && m.correct === true);
+	const isBreak = combo % configuredBoss.comboBreakEvery === 0;
+	assert(chained.finisher === isBreak, `combo x${combo} reports finisher=${isBreak}`);
+	if (isBreak) {
+		const tier = Math.floor(combo / configuredBoss.comboBreakEvery);
+		assert(chained.finisherTier === tier, `combo x${combo} is combo-break tier ${tier}`);
+		assert(chained.finisherPercent === expectedBreakPercent(tier), `combo x${combo} hits for ${expectedBreakPercent(tier)}%`);
+		assert(chained.finisherDamage > 0, `combo x${combo} pierces the chip floor`);
+	}
 	const after = (await store.getHouse('h1'))!;
-	assert(chained.nextWord === after.boss.wordQueue[after.boss.wordIndex], `word ${step + 1} stays in sync past the pool`);
+	assert(chained.nextWord === after.boss.wordQueue[after.boss.wordIndex], `word ${combo} stays in sync past the pool`);
 }
+
+// The third tier finishes the boss without ever sending the secret answer.
+const winningCombo = configuredBoss.comboBreakEvery * 3;
+for (let step = 0; step < configuredBoss.comboBreakEvery; step += 1) {
+	const current = (await store.getHouse('h1'))!;
+	const combo = current.boss.wordCombo + 1;
+	if (!current.boss.active || combo > winningCombo) break;
+	const word = current.boss.wordQueue[current.boss.wordIndex];
+	cursor = messages.length;
+	socket.send(JSON.stringify({ type: 'typing', word }));
+	const finisher = await waitForMessage('boss.word', cursor, (m) => m.type === 'boss.word' && m.correct === true);
+	const isBreak = combo % configuredBoss.comboBreakEvery === 0;
+	assert(finisher.finisher === isBreak, `combo x${combo} reports finisher=${isBreak}`);
+	if (isBreak) {
+		const tier = Math.floor(combo / configuredBoss.comboBreakEvery);
+		assert(finisher.finisherTier === tier, `winning combo reports tier ${tier}`);
+		assert(finisher.finisherPercent === expectedBreakPercent(tier), `winning combo hits for ${expectedBreakPercent(tier)}%`);
+		if (combo === winningCombo) {
+			const end = await waitForMessage('boss.end', cursor, (m) => m.won === true);
+			assert(end.won === true && end.reason === 'win', 'long combo defeats the boss without the secret answer');
+			break;
+		}
+	}
+}
+const defeatedHouse = (await store.getHouse('h1'))!;
+assert(defeatedHouse.boss.active === false, 'boss fight closes after the final combo break');
+
+// Re-enter a fresh fight so the secret-answer/audition path is still covered.
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'enterBoss', bossId: configuredBoss.id }));
+const secondStart = await waitForMessage('boss.start', cursor);
+assert(secondStart.boss?.id === configuredBoss.id, 'fresh boss starts after a combo win');
 
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'auditionSubmit', answer: 'definitely-wrong' }));

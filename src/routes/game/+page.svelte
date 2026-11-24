@@ -43,6 +43,8 @@
 		attackReadyAt: number;
 		attackCost: number;
 		shieldMax: number;
+		comboBreakEvery: number;
+		showNextWords: boolean;
 	};
 
 	let canvas: HTMLCanvasElement;
@@ -69,6 +71,12 @@
 	let wordPulse = 0;
 	let attackPulse = 0;
 	let deathPulse = 0;
+	let comboBreakPulse = 0;
+	let lastFinisherDamage = 0;
+	let lastFinisherPercent = 0;
+	let lastFinisherTier = 0;
+	let victoryPulse = 0;
+	let victoryTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastChip = 0;
 	let bossAudio: HTMLAudioElement | null = null;
 	let now = Date.now();
@@ -115,20 +123,14 @@
 		bossAudio.currentTime = 0;
 	}
 
-	function enterBoss(bossId: string) {
-		if (state && rooms.length && state.solvedRooms.length < rooms.length) return;
-		game?.setPaused(true);
-		bossFeedback = '';
-		wordPulse = 0;
-		attackPulse = 0;
-		deathPulse = 0;
-		lastChip = 0;
-		startBossAudio();
-		send({ type: 'enterBoss', bossId });
+	function clearVictoryTimer() {
+		if (!victoryTimer) return;
+		clearTimeout(victoryTimer);
+		victoryTimer = null;
 	}
 
-	function closeBoss() {
-		send({ type: 'leaveBoss' });
+	function dismissBoss() {
+		clearVictoryTimer();
 		boss = null;
 		bossFeedback = '';
 		stopBossAudio();
@@ -136,7 +138,33 @@
 		game?.setPaused(false);
 	}
 
-	onDestroy(stopBossAudio);
+	function enterBoss(bossId: string) {
+		if (state && rooms.length && state.solvedRooms.length < rooms.length) return;
+		clearVictoryTimer();
+		game?.setPaused(true);
+		bossFeedback = '';
+		wordPulse = 0;
+		attackPulse = 0;
+		deathPulse = 0;
+		comboBreakPulse = 0;
+		lastFinisherDamage = 0;
+		lastFinisherPercent = 0;
+		lastFinisherTier = 0;
+		victoryPulse = 0;
+		lastChip = 0;
+		startBossAudio();
+		send({ type: 'enterBoss', bossId });
+	}
+
+	function closeBoss() {
+		send({ type: 'leaveBoss' });
+		dismissBoss();
+	}
+
+	onDestroy(() => {
+		clearVictoryTimer();
+		stopBossAudio();
+	});
 
 	onMount(() => {
 		const timer = setInterval(() => (now = Date.now()), 250);
@@ -235,17 +263,25 @@
 						const view = message as unknown as BossView & {
 							attackAt: number;
 						};
+						clearVictoryTimer();
 						boss = {
 							...view,
 							combo: view.combo ?? 0,
 							auditionLength: view.auditionLength ?? 0,
 							move: view.move ?? '',
-							shieldMax: view.shieldMax ?? 100
+							shieldMax: view.shieldMax ?? 100,
+							comboBreakEvery: view.comboBreakEvery ?? 10,
+							showNextWords: view.showNextWords !== false
 						};
 						bossFeedback = '';
 						wordPulse = 0;
 						attackPulse = 0;
 						deathPulse = 0;
+						comboBreakPulse = 0;
+						lastFinisherDamage = 0;
+						lastFinisherPercent = 0;
+						lastFinisherTier = 0;
+						victoryPulse = 0;
 						startBossAudio();
 						game?.setBossActive(true);
 						game?.setPaused(true);
@@ -259,6 +295,10 @@
 							bossHp: number;
 							combo: number;
 							chip: number;
+							finisher?: boolean;
+							finisherDamage?: number;
+							finisherPercent?: number;
+							finisherTier?: number;
 						};
 						if (boss) {
 							if (result.correct) {
@@ -273,9 +313,17 @@
 						if (result.correct) {
 							wordPulse += 1;
 							lastChip = result.chip;
-							bossFeedback = result.combo >= 5
-								? `COMBO x${result.combo}! · -${Math.round(result.chip)}`
-								: `WORD OK · -${Math.round(result.chip)} HP`;
+							if (result.finisher) {
+								comboBreakPulse += 1;
+								lastFinisherDamage = result.finisherDamage ?? 0;
+								lastFinisherPercent = result.finisherPercent ?? 0;
+								lastFinisherTier = result.finisherTier ?? 0;
+								bossFeedback = `COMBO BREAK TIER ${lastFinisherTier} · -${Math.round(lastFinisherDamage)} HP`;
+							} else {
+								bossFeedback = result.combo >= 5
+									? `COMBO x${result.combo}! · -${Math.round(result.chip)}`
+									: `WORD OK · -${Math.round(result.chip)} HP`;
+							}
 						} else {
 							bossFeedback = 'MISS · combo reset';
 						}
@@ -398,19 +446,26 @@
 								? 'KNOCKED OUT · returned to the floor'
 								: 'Boss fight left';
 						setTimeout(() => (notice = ''), 5000);
-						boss = null;
-						bossFeedback = '';
-						stopBossAudio();
-						game?.setBossActive(false);
-						game?.setPaused(false);
+						if (end.won) {
+							// Keep the arena mounted so the combo-break and victory
+							// effects can finish playing before returning to the floor.
+							if (boss) {
+								boss.mode = 'idle';
+								boss.hp = 0;
+							}
+							victoryPulse += 1;
+							bossFeedback = 'COMBO BREAK · BOSS DEFEATED';
+							stopBossAudio();
+							clearVictoryTimer();
+							victoryTimer = setTimeout(dismissBoss, 1900);
+						} else {
+							dismissBoss();
+						}
 						break;
 					}
 					case 'boss.reset':
-						boss = null;
+						dismissBoss();
 						bossFeedback = 'Boss reset · connection lost';
-						stopBossAudio();
-						game?.setBossActive(false);
-						game?.setPaused(false);
 						break;
 					case 'notice':
 						notice = String(message.text);
@@ -519,6 +574,13 @@
 			attackReadyAt={boss.attackReadyAt}
 			attackCost={boss.attackCost}
 			shieldMax={boss.shieldMax}
+			comboBreakEvery={boss.comboBreakEvery}
+			showNextWords={boss.showNextWords}
+			comboBreakPulse={comboBreakPulse}
+			lastFinisherDamage={lastFinisherDamage}
+			lastFinisherPercent={lastFinisherPercent}
+			lastFinisherTier={lastFinisherTier}
+			victoryPulse={victoryPulse}
 			feedback={bossFeedback}
 			wordPulse={wordPulse}
 			attackPulse={attackPulse}

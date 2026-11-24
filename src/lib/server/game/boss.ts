@@ -60,7 +60,9 @@ function bossStart(state: HouseState, boss: BossConfig): ServerMessage {
 		combo: state.boss.wordCombo,
 		attackReadyAt: state.boss.attackReadyAt,
 		attackCost: Math.max(10, Math.round(boss.shieldMax * 0.15)),
-		shieldMax: boss.shieldMax
+		shieldMax: boss.shieldMax,
+		comboBreakEvery: Math.max(0, boss.comboBreakEvery ?? 10),
+		showNextWords: boss.showNextWords !== false
 	};
 }
 
@@ -255,28 +257,63 @@ export async function submitBossWord(houseId: HouseId, word: string): Promise<Bo
 	const multiplier = 1 + Math.min(combo - 1, 20) * 0.15;
 	fight.hp = Math.max(floor, fight.hp - boss.chipPerWord * multiplier);
 	const chip = Math.round(beforeHp - fight.hp);
+
+	// Combo breaks ignore the chip floor: a long streak can actually win the
+	// fight, instead of leaving the boss parked at its last 10% of HP.
+	const breakEvery = Math.max(0, boss.comboBreakEvery ?? 10);
+	const finisher = breakEvery > 0 && combo % breakEvery === 0;
+	let finisherDamage = 0;
+	let finisherPercent = 0;
+	let finisherTier = 0;
+	if (finisher) {
+		// Each milestone stacks extra damage: x10, x20, x30 hit harder than
+		// the last. The percentage is sent for feedback; damage stays server-owned.
+		finisherTier = Math.floor(combo / breakEvery);
+		finisherPercent = Math.max(
+			0,
+			(boss.comboBreakPercent ?? 20) + (finisherTier - 1) * Math.max(0, boss.comboBreakStackPercent ?? 0)
+		);
+		const beforeFinisher = fight.hp;
+		fight.hp = Math.max(0, fight.hp - fight.maxHp * (finisherPercent / 100));
+		finisherDamage = Math.round(beforeFinisher - fight.hp);
+	}
+
 	fight.wordCombo = combo;
 	fight.wordsDone += 1;
 	fight.wordIndex += 1;
 	fight.wordQueue.push(buildQueue(boss, config, 1)[0] ?? 'code');
+	const won = fight.hp <= 0;
+	const messages: ServerMessage[] = [
+		{
+			type: 'boss.word',
+			correct: true,
+			word: expected,
+			nextWord: fight.wordQueue[fight.wordIndex] ?? '',
+			shield: fight.shield,
+			bossHp: fight.hp,
+			maxHp: fight.maxHp,
+			wordsDone: fight.wordsDone,
+			combo,
+			chip,
+			finisher,
+			finisherDamage,
+			finisherPercent,
+			finisherTier
+		}
+	];
+	if (won) messages.push(...(await finishBoss(house, config)));
 	await store.saveHouse(house);
+	if (won) {
+		await store.appendLog({
+			at: now(),
+			type: 'boss.win',
+			house: houseId,
+			message: `${houseId} broke the boss combo`,
+			data: { bossId: boss.id, combo }
+		});
+	}
 
-	return {
-		messages: [
-			{
-				type: 'boss.word',
-				correct: true,
-				word: expected,
-				nextWord: fight.wordQueue[fight.wordIndex] ?? '',
-				shield: fight.shield,
-				bossHp: fight.hp,
-				maxHp: fight.maxHp,
-				wordsDone: fight.wordsDone,
-				combo,
-				chip
-			}
-		]
-	};
+	return { messages, progressChanged: won };
 }
 
 /** Spend shield for an immediate hit. Damage and cooldown stay server-side. */

@@ -25,6 +25,13 @@
 	export let wordPulse = 0;
 	export let attackPulse = 0;
 	export let deathPulse = 0;
+	export let comboBreakEvery = 10;
+	export let showNextWords = true;
+	export let comboBreakPulse = 0;
+	export let lastFinisherDamage = 0;
+	export let lastFinisherPercent = 0;
+	export let lastFinisherTier = 0;
+	export let victoryPulse = 0;
 	export let lastChip = 0;
 	export let onWord: (word: string) => void;
 	export let onAnswer: (answer: string) => void;
@@ -50,11 +57,16 @@
 	let lastWordPulse = wordPulse;
 	let lastAttackPulse = attackPulse;
 	let lastDeathPulse = deathPulse;
+	let lastComboBreakPulse = comboBreakPulse;
+	let lastVictoryPulse = victoryPulse;
 	let floats: Float[] = [];
 	let particles: Particle[] = [];
 	let localFeedback = '';
 	let shake = 0;
 	let slash = 0;
+	let flash = 0;
+	let breakLife = 0;
+	let victoryLife = 0;
 	let now = Date.now();
 	let audio: AudioContext | null = null;
 
@@ -74,6 +86,12 @@
 		: canAfford
 			? `⚔ ATTACK · ${attackCost} SH`
 			: `NEED ${attackCost} SHIELD`;
+	$: comboCycle = comboBreakEvery > 0 ? combo % comboBreakEvery : 0;
+	$: comboProgress = comboBreakEvery > 0 && combo > 0
+		? (comboCycle === 0 ? 1 : comboCycle / comboBreakEvery)
+		: 0;
+	$: wordsToBreak = comboBreakEvery > 0 ? comboBreakEvery - comboCycle : 0;
+	$: comboTitle = combo >= 10 ? 'RAMPAGE' : combo >= 7 ? 'SAVAGE' : combo >= 5 ? 'COMBO' : 'CHAIN';
 	$: shownFeedback = localFeedback || feedback;
 
 	$: if (mode !== lastMode) {
@@ -100,23 +118,56 @@
 		if (wordPulse > 0 && combo > 0) {
 			localFeedback = '';
 			playWordSound(combo);
-			shake = Math.min(4, 1 + combo * 0.12);
-			burst(238, 86, combo >= 5 ? '#ffd23f' : '#6be38a', 8 + Math.min(combo, 16));
+			shake = Math.min(10, 1 + combo * 0.24);
+			burst(238, 86, combo >= 5 ? '#ffd23f' : '#6be38a', 10 + Math.min(combo * 2, 30));
 			if (combo >= 3) {
 				floats = [
 					...floats,
 					{
-						text: combo >= 5 ? `COMBO x${combo}` : `CHAIN x${combo}`,
-						color: combo >= 5 ? '#ff9f1c' : playerColor,
+						text: `${comboTitle} x${combo}`,
+						color: combo >= 7 ? '#ff9f1c' : playerColor,
 						x: 160,
-						y: 44,
-						life: 1.15
+						y: 42,
+						life: 1.2
 					}
 				];
 			}
 			if (combo >= 5 && lastChip > 0) {
 				floats = [...floats, { text: `CHIP -${Math.round(lastChip)}`, color: '#6be38a', x: 94, y: 116, life: 0.9 }];
 			}
+		}
+	}
+
+	$: if (comboBreakPulse !== lastComboBreakPulse) {
+		lastComboBreakPulse = comboBreakPulse;
+		if (comboBreakPulse > 0) {
+			localFeedback = '';
+			flash = 1;
+			breakLife = 1.5;
+			shake = 16;
+			slash = 1;
+			burst(160, 84, '#fff4b8', 48);
+			burst(238, 86, '#ffd23f', 34);
+			burst(238, 86, playerColor, 24);
+			floats = [
+				...floats,
+				{ text: 'COMBO BREAK!', color: '#fff4b8', x: 160, y: 32, life: 1.7 },
+				{ text: `-${Math.round(lastFinisherDamage)} HP`, color: '#ffd23f', x: 238, y: 62, life: 1.5 }
+			];
+			playComboBreakSound();
+		}
+	}
+
+	$: if (victoryPulse !== lastVictoryPulse) {
+		lastVictoryPulse = victoryPulse;
+		if (victoryPulse > 0) {
+			localFeedback = '';
+			victoryLife = 1.9;
+			flash = 1;
+			shake = 14;
+			burst(160, 82, '#ffd23f', 60);
+			burst(160, 82, '#6be38a', 30);
+			playVictorySound();
 		}
 	}
 
@@ -138,6 +189,9 @@
 			localFeedback = '';
 			typed = '';
 			blind = '';
+			flash = 0;
+			breakLife = 0;
+			victoryLife = 0;
 			playDeathSound();
 			shake = 10;
 			burst(160, 92, '#ff3b6b', 34);
@@ -177,12 +231,30 @@
 	}
 
 	function playWordSound(currentCombo: number) {
-		tone(620 + Math.min(currentCombo, 12) * 35, 0.07, 'square', 0.035);
-		tone(880 + Math.min(currentCombo, 12) * 45, 0.09, 'square', 0.028, 0.055);
+		const step = Math.min(currentCombo, 16);
+		tone(620 + step * 35, 0.07, 'square', 0.035);
+		tone(880 + step * 45, 0.09, 'square', 0.028, 0.055);
+		if (currentCombo >= 3) tone(1040 + step * 20, 0.05, 'triangle', 0.018, 0.03);
 		if (currentCombo > 0 && currentCombo % 5 === 0) {
 			tone(1320, 0.16, 'triangle', 0.05, 0.11);
 			tone(1760, 0.13, 'triangle', 0.035, 0.15);
 		}
+	}
+
+	function playComboBreakSound() {
+		tone(150, 0.34, 'sawtooth', 0.07);
+		[0, 0.06, 0.12, 0.18, 0.24].forEach((delay, index) => {
+			tone(660 * Math.pow(1.26, index), 0.12, 'square', 0.05, delay);
+		});
+		tone(1320, 0.32, 'triangle', 0.06, 0.3);
+		tone(1760, 0.24, 'triangle', 0.04, 0.36);
+	}
+
+	function playVictorySound() {
+		[523, 659, 784, 1047].forEach((frequency, index) => {
+			tone(frequency, 0.32, 'square', 0.045, index * 0.09);
+			tone(frequency * 2, 0.18, 'triangle', 0.025, index * 0.09 + 0.02);
+		});
 	}
 
 	function playAttackSound() {
@@ -553,6 +625,9 @@
 			now = Date.now();
 			shake = Math.max(0, shake - dt * 18);
 			slash = Math.max(0, slash - dt * 2.6);
+			flash = Math.max(0, flash - dt * 1.8);
+			breakLife = Math.max(0, breakLife - dt);
+			victoryLife = Math.max(0, victoryLife - dt);
 			for (const particle of particles) {
 				particle.x += particle.vx * dt;
 				particle.y += particle.vy * dt;
@@ -679,10 +754,36 @@
 
 		<div class="stage">
 			<canvas bind:this={canvas} width="320" height="180" aria-label="Boss arena"></canvas>
+			{#if flash > 0}
+				<div class="hit-flash" class:gold={comboBreakPulse > 0} style:opacity={Math.min(1, flash)}></div>
+			{/if}
 			{#if combo >= 3}
-				<div class="combo-burst" class:hot={combo >= 5} style:left={`${Math.min(88, 12 + combo * 3)}%`}>
-					<span>COMBO</span><strong>x{combo}</strong>
+				{#key combo}
+					<div
+						class="combo-burst"
+						class:hot={combo >= 5}
+						class:finished={comboBreakEvery > 0 && comboCycle === 0}
+						style:left={`${Math.min(88, 12 + combo * 3)}%`}
+					>
+						<span>{comboTitle}</span><strong>x{combo}</strong>
+					</div>
+				{/key}
+			{/if}
+			{#if victoryLife > 0}
+				<div class="victory-overlay" role="status">
+					<div class="victory-title">BOSS DEFEATED</div>
+					<div class="victory-count">COMBO BREAK x{combo}</div>
+					<div class="victory-note">The floor is yours</div>
 				</div>
+			{/if}
+			{#if breakLife > 0}
+				{#key comboBreakPulse}
+					<div class="break-banner" role="status">
+						<div class="break-kicker">COMBO BREAK</div>
+						<div class="break-damage">-{Math.round(lastFinisherDamage)} HP</div>
+						<div class="break-sub">TIER {lastFinisherTier} · {Math.round(lastFinisherPercent)}% MAX HP · x{combo}</div>
+					</div>
+				{/key}
 			{/if}
 			{#if mode === 'stunned'}
 				<div class="death-overlay" role="alert">
@@ -695,7 +796,9 @@
 
 		<div class="typebox" class:err={/denied|lock|miss|wrong|need|cooldown/i.test(shownFeedback)} class:attack={localMode === 'attack'}>
 			<div class="mode">
-				{#if mode === 'stunned'}
+				{#if mode === 'idle' && victoryLife > 0}
+					VICTORY · the combo broke through
+				{:else if mode === 'stunned'}
 					YOU DIED · exiting in {deathSeconds}s…
 				{:else if mode === 'audition'}
 					AUDITION · watch the combo
@@ -709,7 +812,9 @@
 			{#if fighting && localMode === 'typing'}
 				<div class="words">
 					<span class="done">{target.slice(0, typed.length)}</span><span class="next">{target[typed.length] ?? '␣'}</span><span class="rest">{target.slice(typed.length + 1)}</span>
-					<span class="up">{words.slice(wordIndex + 1, wordIndex + 7).join(' ')}</span>
+					{#if showNextWords}
+						<span class="up">NEXT {words.slice(wordIndex + 1, wordIndex + 7).join(' ')}</span>
+					{/if}
 				</div>
 			{:else if fighting && localMode === 'attack'}
 				<div class="blind">{blind ? '■ '.repeat(blind.length) : '…'}</div>
@@ -725,6 +830,17 @@
 			<div><span>HP</span>{Math.round(playerHp)} / 100</div>
 			<div><span>SHIELD</span>{Math.round(shield)} / {shieldMax}</div>
 			<div class:combo-hot={combo >= 5}><span>COMBO</span>x{combo}</div>
+			{#if comboBreakEvery > 0}
+				<div class="combo-meter" class:charged={comboProgress >= 1}>
+					<div class="combo-meter-head">
+						<span>COMBO BREAK</span>
+						<span>{comboProgress >= 1 ? 'UNLEASHED' : `${wordsToBreak} WORDS`}</span>
+					</div>
+					<div class="combo-meter-track">
+						<div class="combo-meter-fill" style:width={`${comboProgress * 100}%`}></div>
+					</div>
+				</div>
+			{/if}
 		</div>
 	</div>
 </div>
@@ -789,6 +905,7 @@
 	.combo-burst {
 		position: absolute;
 		top: 38%;
+		z-index: 2;
 		transform: translate(-50%, -50%) rotate(-8deg);
 		display: flex;
 		flex-direction: column;
@@ -796,9 +913,10 @@
 		color: #6be38a;
 		text-shadow: 0 0 14px currentColor;
 		pointer-events: none;
-		animation: burst 0.7s ease-out both;
+		animation: burst 0.75s ease-out both;
 	}
 	.combo-burst.hot { color: #ffd23f; }
+	.combo-burst.finished { color: #fff4b8; text-shadow: 0 0 22px #ff9f1c; }
 	.combo-burst span { font-size: clamp(0.6rem, 2vw, 0.9rem); letter-spacing: 0.2em; }
 	.combo-burst strong { font-size: clamp(1.6rem, 7vw, 4.5rem); line-height: 1; }
 	@keyframes burst {
@@ -806,9 +924,76 @@
 		35% { opacity: 1; scale: 1.18; }
 		100% { opacity: 0; scale: 1.4; translate: 0 -24px; }
 	}
+	.hit-flash {
+		position: absolute;
+		inset: 0;
+		z-index: 4;
+		background: radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.8), rgba(255, 210, 63, 0.25) 60%, transparent);
+		mix-blend-mode: screen;
+		pointer-events: none;
+	}
+	.hit-flash.gold { background: radial-gradient(circle at 50% 45%, rgba(255, 244, 184, 0.9), rgba(255, 159, 28, 0.35) 60%, transparent); }
+	.break-banner {
+		position: absolute;
+		top: 24%;
+		left: 50%;
+		z-index: 5;
+		transform: translateX(-50%);
+		display: grid;
+		justify-items: center;
+		gap: 2px;
+		text-align: center;
+		white-space: nowrap;
+		pointer-events: none;
+		animation: breakBanner 1.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+	}
+	.break-kicker {
+		color: #fff4b8;
+		font-size: clamp(0.75rem, 3vw, 1.5rem);
+		letter-spacing: 0.22em;
+		text-shadow: 0 0 16px #ff9f1c;
+	}
+	.break-damage {
+		color: #ffd23f;
+		font-size: clamp(1.6rem, 8vw, 4rem);
+		line-height: 1;
+		text-shadow: 4px 4px 0 #000, 0 0 24px #ff5d6c;
+	}
+	.break-sub {
+		color: #ff6b7a;
+		font-size: clamp(0.5rem, 1.6vw, 0.78rem);
+		letter-spacing: 0.22em;
+	}
+	@keyframes breakBanner {
+		0% { opacity: 0; scale: 0.2; rotate: -12deg; }
+		18% { opacity: 1; scale: 1.3; rotate: 3deg; }
+		32% { scale: 1; rotate: -2deg; }
+		75% { opacity: 1; translate: 0 -6px; }
+		100% { opacity: 0; scale: 1.12; translate: 0 -28px; }
+	}
+	.victory-overlay {
+		position: absolute;
+		inset: 0;
+		z-index: 3;
+		display: grid;
+		place-content: center;
+		gap: 0.35rem;
+		text-align: center;
+		background: radial-gradient(circle, rgba(255, 210, 63, 0.28), rgba(6, 4, 10, 0.86));
+		pointer-events: none;
+		animation: victoryIn 0.35s ease-out both;
+	}
+	.victory-title { color: #ffd23f; font-size: clamp(1.4rem, 7vw, 4rem); letter-spacing: 0.1em; text-shadow: 0 0 24px currentColor; }
+	.victory-count { color: #fff4b8; font-size: clamp(0.7rem, 2.8vw, 1.3rem); }
+	.victory-note { color: #6be38a; font-size: clamp(0.6rem, 1.8vw, 0.85rem); }
+	@keyframes victoryIn {
+		from { opacity: 0; scale: 0.9; }
+		to { opacity: 1; scale: 1; }
+	}
 	.death-overlay {
 		position: absolute;
 		inset: 0;
+		z-index: 6;
 		display: grid;
 		place-content: center;
 		gap: 0.35rem;
@@ -850,6 +1035,37 @@
 	.stats div { background: rgba(13, 9, 20, 0.96); border: 1px solid #3a3150; padding: clamp(4px, 0.9vh, 8px); }
 	.stats span { display: block; color: #9a90b0; font-size: 0.6rem; }
 	.stats .combo-hot { border-color: #ffd23f; color: #ffd23f; box-shadow: 0 0 14px rgba(255, 210, 63, 0.3); }
+	.stats .combo-meter {
+		grid-column: 1 / -1;
+		background: transparent;
+		border: 0;
+		padding: 0;
+	}
+	.combo-meter-head {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+		color: #9a90b0;
+		font-size: clamp(0.52rem, 1.4vw, 0.66rem);
+		letter-spacing: 0.08em;
+	}
+	.combo-meter.charged .combo-meter-head { color: #ffd23f; }
+	.combo-meter-track {
+		height: 5px;
+		margin-top: 3px;
+		background: #2a2233;
+		border: 1px solid #3a3150;
+		overflow: hidden;
+	}
+	.combo-meter-fill {
+		height: 100%;
+		background: linear-gradient(90deg, #6be38a, #ffd23f);
+		transition: width 0.18s ease-out;
+	}
+	.combo-meter.charged .combo-meter-fill {
+		background: #fff4b8;
+		box-shadow: 0 0 12px #ffd23f;
+	}
 	@media (max-width: 560px) {
 		.stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 		.typebox { max-height: 34vh; }

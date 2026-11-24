@@ -108,7 +108,9 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		combo: z.number(),
 		attackReadyAt: z.number(),
 		attackCost: z.number(),
-		shieldMax: z.number()
+		shieldMax: z.number(),
+		comboBreakEvery: z.number(),
+		showNextWords: z.boolean()
 	}),
 	z.object({
 		type: z.literal('boss.word'),
@@ -120,7 +122,11 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		maxHp: z.number(),
 		wordsDone: z.number(),
 		combo: z.number(),
-		chip: z.number()
+		chip: z.number(),
+		finisher: z.boolean().optional(),
+		finisherDamage: z.number().optional(),
+		finisherPercent: z.number().optional(),
+		finisherTier: z.number().optional()
 	}),
 	z.object({
 		type: z.literal('boss.playerAttack'),

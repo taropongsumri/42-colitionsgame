@@ -23,6 +23,7 @@ const {
 	submitBossWord
 } = await import('../src/lib/server/game/boss');
 const { liveConfig } = await import('../src/lib/server/config');
+const { serverMessageSchema } = await import('../src/lib/shared/protocol');
 const { realTableFor, hintTableFor, TABLE_IDS } = await import('../src/lib/shared/dungeon');
 const { advanceBossWords } = await import('../src/lib/client/bossWords');
 
@@ -295,7 +296,7 @@ describe('phase 2 gameplay', () => {
 		expect(pastPool.words).toHaveLength(25);
 	});
 
-	test('boss typing keeps working after the initial word pool is exhausted', async () => {
+	test('combo breaks scale per tier, pierce the chip floor and can win the fight', async () => {
 		const store = await getStore();
 		const config = await liveConfig();
 		const boss = findBoss(config, 'staff')!;
@@ -306,23 +307,50 @@ describe('phase 2 gameplay', () => {
 		house.answerLockUntil = null;
 		await store.saveHouse(house);
 
-		await enterBoss('h2', 'staff');
+		const entered = await enterBoss('h2', 'staff');
+		const start = entered.messages.find((message) => message.type === 'boss.start')!;
+		expect(start).toMatchObject({
+			type: 'boss.start',
+			comboBreakEvery: boss.comboBreakEvery,
+			showNextWords: boss.showNextWords !== false
+		});
+		expect(serverMessageSchema.safeParse(start).success).toBe(true);
+
 		const initial = (await store.getHouse('h2'))!;
 		expect(initial.boss.wordQueue).toHaveLength(boss.wordPool.length);
 
-		const rounds = boss.wordPool.length + 6;
-		for (let index = 0; index < rounds; index += 1) {
+		const totalWords = boss.comboBreakEvery * 3;
+		let lastMessages: { messages: unknown[] } = { messages: [] };
+		for (let index = 0; index < totalWords; index += 1) {
 			const current = (await store.getHouse('h2'))!;
 			const word = current.boss.wordQueue[current.boss.wordIndex];
 			const result = await submitBossWord('h2', word);
-			expect(result.messages[0]).toMatchObject({ type: 'boss.word', correct: true, combo: index + 1 });
+			const message = result.messages[0] as Record<string, unknown>;
+			const combo = index + 1;
+			const tier = Math.floor(combo / boss.comboBreakEvery);
+			const isBreak = combo % boss.comboBreakEvery === 0;
+
+			expect(message).toMatchObject({ type: 'boss.word', correct: true, combo, finisher: isBreak });
+			if (isBreak) {
+				const expectedPercent = boss.comboBreakPercent + (tier - 1) * (boss.comboBreakStackPercent ?? 0);
+				expect(message.finisherTier).toBe(tier);
+				expect(message.finisherPercent).toBe(expectedPercent);
+				expect(message.finisherDamage as number).toBeGreaterThan(0);
+				expect(serverMessageSchema.safeParse(message).success).toBe(true);
+			}
+
 			const after = (await store.getHouse('h2'))!;
 			expect(after.boss.wordIndex).toBe(current.boss.wordIndex + 1);
-			expect((result.messages[0] as { nextWord: string }).nextWord).toBe(
-				after.boss.wordQueue[after.boss.wordIndex]
-			);
+			expect(message.nextWord).toBe(after.boss.wordQueue[after.boss.wordIndex]);
+			lastMessages = result;
 		}
-		expect((await store.getHouse('h2'))!.boss.wordIndex).toBe(rounds);
+
+		expect(lastMessages.messages).toContainEqual(
+			expect.objectContaining({ type: 'boss.end', won: true, reason: 'win' })
+		);
+		const done = (await store.getHouse('h2'))!;
+		expect(done.boss.active).toBe(false);
+		expect(done.boss.wordIndex).toBe(totalWords);
 	});
 
 	test('knockout waits for the death delay, then exits the dungeon', async () => {

@@ -23,6 +23,10 @@
 		shieldPerWord: number;
 		shieldMax: number;
 		chipPerWord: number;
+		showNextWords: boolean;
+		comboBreakEvery: number;
+		comboBreakPercent: number;
+		comboBreakStackPercent: number;
 		attackEverySeconds: number;
 		attackDamage: number;
 		wrongHealPercent: number;
@@ -64,6 +68,10 @@
 			shieldPerWord: number('shieldPerWord', 10),
 			shieldMax: number('shieldMax', 100),
 			chipPerWord: number('chipPerWord', 5),
+			showNextWords: entry.showNextWords !== false,
+			comboBreakEvery: number('comboBreakEvery', 10),
+			comboBreakPercent: number('comboBreakPercent', 20),
+			comboBreakStackPercent: number('comboBreakStackPercent', 10),
 			attackEverySeconds: number('attackEverySeconds', 3),
 			attackDamage: number('attackDamage', 15),
 			wrongHealPercent: number('wrongHealPercent', 30),
@@ -88,6 +96,10 @@
 			shieldPerWord: Number(value.shieldPerWord ?? 10),
 			shieldMax: Number(value.shieldMax ?? 100),
 			chipPerWord: Number(value.chipPerWord ?? 5),
+			showNextWords: value.showNextWords !== false,
+			comboBreakEvery: Number(value.comboBreakEvery ?? 10),
+			comboBreakPercent: Number(value.comboBreakPercent ?? 20),
+			comboBreakStackPercent: Number(value.comboBreakStackPercent ?? 10),
 			attackEverySeconds: Number(value.attackEverySeconds ?? 3),
 			attackDamage: Number(value.attackDamage ?? 15),
 			wrongHealPercent: Number(value.wrongHealPercent ?? 30),
@@ -319,6 +331,10 @@
 				<label>Shield / word<input type="number" bind:value={boss.shieldPerWord} /></label>
 				<label>Shield max<input type="number" bind:value={boss.shieldMax} /></label>
 				<label>Chip / word<input type="number" bind:value={boss.chipPerWord} /></label>
+				<label class="check"><input type="checkbox" bind:checked={boss.showNextWords} /> Show upcoming words</label>
+				<label>Combo break every (words)<input type="number" bind:value={boss.comboBreakEvery} /></label>
+				<label>Combo break HP (%)<input type="number" bind:value={boss.comboBreakPercent} /></label>
+				<label>Combo break stack HP (%)<input type="number" bind:value={boss.comboBreakStackPercent} /></label>
 				<label>Attack every (s)<input type="number" step="0.1" bind:value={boss.attackEverySeconds} /></label>
 				<label>Attack damage<input type="number" bind:value={boss.attackDamage} /></label>
 				<label>Wrong heal (%)<input type="number" bind:value={boss.wrongHealPercent} /></label>
@@ -371,6 +387,8 @@
 	.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; }
 	.fields .wide { grid-column: 1 / -1; }
 	.fields label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.75rem; color: #9f95a6; }
+	.fields label.check { flex-direction: row; align-items: center; }
+	.fields label.check input { width: auto; }
 	.fields input { width: 100%; }
 	kbd { border: 1px solid #5b4d70; padding: 0 4px; }
 	.message { color: #f5b301; }
