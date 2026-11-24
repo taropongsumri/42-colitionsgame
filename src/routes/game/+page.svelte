@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onDestroy, onMount } from 'svelte';
+	import { advanceBossWords } from '$lib/client/bossWords';
 	import { createGame, type BossOption, type Ghost, type Hud } from '$lib/client/game';
 	import BossFight from '$lib/components/game/BossFight.svelte';
 	import Terminal from '$lib/components/game/Terminal.svelte';
@@ -67,6 +68,7 @@
 	let bossFeedback = '';
 	let wordPulse = 0;
 	let attackPulse = 0;
+	let deathPulse = 0;
 	let lastChip = 0;
 	let bossAudio: HTMLAudioElement | null = null;
 	let now = Date.now();
@@ -119,6 +121,7 @@
 		bossFeedback = '';
 		wordPulse = 0;
 		attackPulse = 0;
+		deathPulse = 0;
 		lastChip = 0;
 		startBossAudio();
 		send({ type: 'enterBoss', bossId });
@@ -242,6 +245,7 @@
 						bossFeedback = '';
 						wordPulse = 0;
 						attackPulse = 0;
+						deathPulse = 0;
 						startBossAudio();
 						game?.setBossActive(true);
 						game?.setPaused(true);
@@ -257,7 +261,11 @@
 							chip: number;
 						};
 						if (boss) {
-							if (result.correct) boss.wordIndex += 1;
+							if (result.correct) {
+								const advanced = advanceBossWords(boss.words, boss.wordIndex, result.nextWord);
+								boss.words = advanced.words;
+								boss.wordIndex = advanced.wordIndex;
+							}
 							boss.shield = result.shield;
 							boss.hp = result.bossHp;
 							boss.combo = result.combo;
@@ -349,14 +357,18 @@
 						break;
 					}
 					case 'boss.stun': {
-						const stun = message as unknown as { until: number; penalty: number };
+						const stun = message as unknown as { until: number; seconds: number; penalty: number };
 						if (boss) {
 							boss.mode = 'stunned';
 							boss.playerHp = 0;
+							boss.shield = 0;
 							boss.combo = 0;
+							boss.auditionLength = 0;
 							boss.lockUntil = stun.until;
 						}
-						bossFeedback = `STUNNED · -${stun.penalty} points`;
+						deathPulse += 1;
+						bossFeedback = `YOU DIED · -${stun.penalty} points · exiting in ${stun.seconds}s`;
+						stopBossAudio();
 						break;
 					}
 					case 'boss.ready': {
@@ -379,8 +391,12 @@
 						break;
 					}
 					case 'boss.end': {
-						const end = message as unknown as { won: boolean; score: number };
-						notice = end.won ? `BOSS DEFEATED · ${end.score} points` : 'Boss fight left';
+						const end = message as unknown as { won: boolean; score: number; reason?: string };
+						notice = end.won
+							? `BOSS DEFEATED · ${end.score} points`
+							: end.reason === 'knockout'
+								? 'KNOCKED OUT · returned to the floor'
+								: 'Boss fight left';
 						setTimeout(() => (notice = ''), 5000);
 						boss = null;
 						bossFeedback = '';
@@ -506,6 +522,7 @@
 			feedback={bossFeedback}
 			wordPulse={wordPulse}
 			attackPulse={attackPulse}
+			deathPulse={deathPulse}
 			lastChip={lastChip}
 			onWord={(word) => send({ type: 'typing', word })}
 			onAnswer={(answer) => send({ type: 'auditionSubmit', answer })}

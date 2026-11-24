@@ -166,7 +166,7 @@ async function runBossMessage(
 			await store.saveHouse(state);
 			return {
 				messages: [
-					{ type: 'boss.end' as const, won: false, score: state.score, bossHp: state.boss.hp },
+					{ type: 'boss.end' as const, won: false, score: state.score, bossHp: state.boss.hp, reason: 'left' },
 					{ type: 'state' as const, state }
 				],
 				notice: `${house} left the boss fight`

@@ -142,10 +142,12 @@ function stunPlayer(house: HouseState, boss: BossConfig): ServerMessage {
 	fight.stunCount += 1;
 	fight.penalty += boss.stunPenalty;
 	fight.hp = Math.min(fight.maxHp, fight.hp + fight.maxHp * (boss.bossHealOnStunPercent / 100));
-	fight.lockUntil = lockFor(boss, fight.stunCount - 1);
+	// The lock is the visible exit countdown, not a 30s terminal lock: the
+	// knockout ends the fight after this delay.
+	fight.lockUntil = until;
 	fight.invulnUntil = until + boss.invulnAfterStunSeconds * 1000;
 	fight.attackAt = until + 1000;
-	house.answerLockUntil = fight.lockUntil;
+	house.answerLockUntil = null;
 	house.score = Math.max(0, house.score - boss.stunPenalty);
 	return {
 		type: 'boss.stun',
@@ -476,9 +478,26 @@ async function finishBoss(house: HouseState, config: LiveConfig): Promise<Server
 	house.score += points;
 
 	return [
-		{ type: 'boss.end', won: true, score: house.score, bossHp: fight.hp },
+		{ type: 'boss.end', won: true, score: house.score, bossHp: fight.hp, reason: 'win' },
 		{ type: 'state', state: house },
 		{ type: 'notice', text: `${HOUSES[house.id].name} defeated the boss! +${points} points.` }
+	];
+}
+
+/** Knockout cleanup: after the death delay, remove the player from the fight. */
+async function finishBossLoss(house: HouseState, config: LiveConfig): Promise<ServerMessage[]> {
+	const boss = findBoss(config, house.boss.bossId);
+	const penalty = house.boss.penalty;
+	house.boss = emptyBoss();
+	house.answerLockUntil = null;
+
+	return [
+		{ type: 'boss.end', won: false, score: house.score, bossHp: 0, reason: 'knockout' },
+		{ type: 'state', state: house },
+		{
+			type: 'notice',
+			text: `${HOUSES[house.id].name} was knocked out of ${boss?.name ?? 'the boss'} · -${penalty} points.`
+		}
 	];
 }
 
@@ -505,12 +524,9 @@ export async function bossTick(): Promise<BossTick> {
 		let dirty = false;
 
 		if (fight.mode === 'stunned' && fight.stunUntil && at >= fight.stunUntil) {
-			fight.mode = 'typing';
-			fight.playerHp = boss.playerHp;
-			fight.shield = 0;
-			fight.attackAt = at + boss.attackEverySeconds * 1000;
-			messages.push({ type: 'boss.ready', playerHp: fight.playerHp, shield: 0 });
+			messages.push(...(await finishBossLoss(house, config)));
 			dirty = true;
+			progressChanged = true;
 		}
 
 		if (fight.mode === 'audition' && fight.audition) {

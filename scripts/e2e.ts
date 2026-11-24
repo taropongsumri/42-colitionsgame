@@ -238,6 +238,17 @@ socket.send(JSON.stringify({ type: 'bossAttack' }));
 const cooling = await waitForMessage('boss.playerAttack', cursor);
 assert(cooling.reason === 'COOLDOWN' && cooling.damage === 0, 'rapid attacks are rejected by cooldown');
 
+// Typing must keep working after the initial word pool runs out.
+for (let step = 0; step < bossStart.words.length + 4; step += 1) {
+	const current = (await store.getHouse('h1'))!;
+	const word = current.boss.wordQueue[current.boss.wordIndex];
+	cursor = messages.length;
+	socket.send(JSON.stringify({ type: 'typing', word }));
+	const chained = await waitForMessage('boss.word', cursor, (m) => m.type === 'boss.word' && m.correct === true);
+	const after = (await store.getHouse('h1'))!;
+	assert(chained.nextWord === after.boss.wordQueue[after.boss.wordIndex], `word ${step + 1} stays in sync past the pool`);
+}
+
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'auditionSubmit', answer: 'definitely-wrong' }));
 const bossDenied = await waitForMessage('boss.answerResult', cursor);

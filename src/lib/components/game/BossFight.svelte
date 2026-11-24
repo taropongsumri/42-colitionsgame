@@ -24,6 +24,7 @@
 	export let feedback = '';
 	export let wordPulse = 0;
 	export let attackPulse = 0;
+	export let deathPulse = 0;
 	export let lastChip = 0;
 	export let onWord: (word: string) => void;
 	export let onAnswer: (answer: string) => void;
@@ -48,6 +49,7 @@
 	let lastBossHp = hp;
 	let lastWordPulse = wordPulse;
 	let lastAttackPulse = attackPulse;
+	let lastDeathPulse = deathPulse;
 	let floats: Float[] = [];
 	let particles: Particle[] = [];
 	let localFeedback = '';
@@ -64,6 +66,7 @@
 	$: swapSeconds = Math.max(0, Math.ceil((swapReadyAt - now) / 1000));
 	$: immune = now < invulnUntil;
 	$: fighting = mode === 'typing' || mode === 'attack';
+	$: deathSeconds = mode === 'stunned' && lockUntil ? Math.max(0, Math.ceil((lockUntil - now) / 1000)) : 0;
 	$: attackSeconds = Math.max(0, (attackReadyAt - now) / 1000);
 	$: canAfford = shield >= attackCost;
 	$: attackLabel = attackSeconds > 0
@@ -75,10 +78,10 @@
 
 	$: if (mode !== lastMode) {
 		lastMode = mode;
-		if (mode === 'typing' || mode === 'attack') {
-			localMode = mode;
-			typed = '';
-		}
+		typed = '';
+		blind = '';
+		localFeedback = '';
+		if (mode === 'typing' || mode === 'attack') localMode = mode;
 	}
 
 	$: if (hp < lastBossHp) {
@@ -129,6 +132,18 @@
 		}
 	}
 
+	$: if (deathPulse !== lastDeathPulse) {
+		lastDeathPulse = deathPulse;
+		if (deathPulse > 0) {
+			localFeedback = '';
+			typed = '';
+			blind = '';
+			playDeathSound();
+			shake = 10;
+			burst(160, 92, '#ff3b6b', 34);
+		}
+	}
+
 	function image(src: string): HTMLImageElement {
 		const element = new Image();
 		element.src = src;
@@ -174,6 +189,13 @@
 		tone(110, 0.14, 'sawtooth', 0.055);
 		tone(260, 0.1, 'square', 0.045, 0.03);
 		tone(520, 0.08, 'square', 0.03, 0.06);
+	}
+
+	function playDeathSound() {
+		tone(220, 0.3, 'sawtooth', 0.06);
+		tone(165, 0.35, 'sawtooth', 0.05, 0.12);
+		tone(110, 0.5, 'sine', 0.06, 0.26);
+		tone(70, 0.7, 'sawtooth', 0.045, 0.4);
 	}
 
 	function burst(x: number, y: number, color: string, count: number) {
@@ -505,8 +527,8 @@
 			text('AUDITION MODE', 160, 40, 6, '#ff6b7a');
 		}
 		if (mode === 'stunned') {
-			text('NO-CLIPPED', 160, 72, 13, '#ff3b6b');
-			text(`STUNNED ${Math.max(0, Math.ceil(((lockUntil ?? now) - now) / 1000))}s`, 160, 94, 7, '#ffffff');
+			text('YOU DIED', 160, 72, 13, '#ff3b6b');
+			text(`EXITING IN ${deathSeconds}s`, 160, 94, 7, '#ffffff');
 		}
 		if (auditionLength > 0) {
 			text(`${'■'.repeat(Math.min(18, combo))}${'·'.repeat(Math.max(0, auditionLength - combo))}`, 160, 48, 9, '#ffd23f');
@@ -583,6 +605,12 @@
 	}
 
 	function onKey(event: KeyboardEvent) {
+		// A dead player waits for the server-side exit; no attack/swap/typing input
+		// should sneak through during the stunned or audition phases.
+		if (!fighting) {
+			if (['Tab', 'ArrowRight', 'Escape', ' ', 'Enter'].includes(event.key)) event.preventDefault();
+			return;
+		}
 		if (event.key === 'Tab') {
 			event.preventDefault();
 			toggleMode();
@@ -598,7 +626,6 @@
 			attack();
 			return;
 		}
-		if (!fighting) return;
 		if (localMode === 'typing') {
 			if (event.key === 'Backspace') {
 				event.preventDefault();
@@ -657,12 +684,19 @@
 					<span>COMBO</span><strong>x{combo}</strong>
 				</div>
 			{/if}
+			{#if mode === 'stunned'}
+				<div class="death-overlay" role="alert">
+					<div class="death-title">YOU DIED</div>
+					<div class="death-count">EXITING DUNGEON IN {deathSeconds}s</div>
+					<div class="death-note">Penalty applied · returning to the floor</div>
+				</div>
+			{/if}
 		</div>
 
 		<div class="typebox" class:err={/denied|lock|miss|wrong|need|cooldown/i.test(shownFeedback)} class:attack={localMode === 'attack'}>
 			<div class="mode">
 				{#if mode === 'stunned'}
-					STUNNED · rebooting…
+					YOU DIED · exiting in {deathSeconds}s…
 				{:else if mode === 'audition'}
 					AUDITION · watch the combo
 				{:else if localMode === 'typing'}
@@ -772,6 +806,19 @@
 		35% { opacity: 1; scale: 1.18; }
 		100% { opacity: 0; scale: 1.4; translate: 0 -24px; }
 	}
+	.death-overlay {
+		position: absolute;
+		inset: 0;
+		display: grid;
+		place-content: center;
+		gap: 0.35rem;
+		text-align: center;
+		background: radial-gradient(circle, rgba(84, 8, 28, 0.82), rgba(6, 4, 10, 0.92));
+		pointer-events: none;
+	}
+	.death-title { color: #ff3b6b; font-size: clamp(1.4rem, 7vw, 4rem); letter-spacing: 0.12em; text-shadow: 0 0 20px currentColor; }
+	.death-count { color: #ffd23f; font-size: clamp(0.7rem, 2.6vw, 1.2rem); }
+	.death-note { color: #bdb4c2; font-size: clamp(0.6rem, 1.8vw, 0.8rem); }
 	.typebox {
 		margin: clamp(4px, 1vh, 10px) clamp(6px, 1.5vw, 16px) 0;
 		border: 2px solid #3a3150;

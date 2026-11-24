@@ -24,6 +24,7 @@ const {
 } = await import('../src/lib/server/game/boss');
 const { liveConfig } = await import('../src/lib/server/config');
 const { realTableFor, hintTableFor, TABLE_IDS } = await import('../src/lib/shared/dungeon');
+const { advanceBossWords } = await import('../src/lib/client/bossWords');
 
 const questionIds = Array.from({ length: 30 }, (_, index) => `q${String(index + 1).padStart(2, '0')}`);
 const questions = questionIds.map((id, index) => ({
@@ -280,5 +281,84 @@ describe('phase 2 gameplay', () => {
 		const done = (await store.getHouse('h1'))!;
 		expect(done.boss.active).toBe(false);
 		expect(done.score).toBeGreaterThan(scoreBefore);
+	});
+
+	test('client word queue advances past the initial boss word pool', () => {
+		const initial = Array.from({ length: 24 }, (_, index) => `w${index}`);
+		const first = advanceBossWords(initial, 0, 'w1');
+		expect(first.wordIndex).toBe(1);
+		expect(first.words[1]).toBe('w1');
+
+		const pastPool = advanceBossWords(initial, 23, 'fresh-word');
+		expect(pastPool.wordIndex).toBe(24);
+		expect(pastPool.words[24]).toBe('fresh-word');
+		expect(pastPool.words).toHaveLength(25);
+	});
+
+	test('boss typing keeps working after the initial word pool is exhausted', async () => {
+		const store = await getStore();
+		const config = await liveConfig();
+		const boss = findBoss(config, 'staff')!;
+		const house = (await store.getHouse('h2'))!;
+		house.room = config.game.roomCount + 1;
+		house.solvedRooms = Array.from({ length: config.game.roomCount }, (_, index) => index + 1);
+		house.boss.active = false;
+		house.answerLockUntil = null;
+		await store.saveHouse(house);
+
+		await enterBoss('h2', 'staff');
+		const initial = (await store.getHouse('h2'))!;
+		expect(initial.boss.wordQueue).toHaveLength(boss.wordPool.length);
+
+		const rounds = boss.wordPool.length + 6;
+		for (let index = 0; index < rounds; index += 1) {
+			const current = (await store.getHouse('h2'))!;
+			const word = current.boss.wordQueue[current.boss.wordIndex];
+			const result = await submitBossWord('h2', word);
+			expect(result.messages[0]).toMatchObject({ type: 'boss.word', correct: true, combo: index + 1 });
+			const after = (await store.getHouse('h2'))!;
+			expect(after.boss.wordIndex).toBe(current.boss.wordIndex + 1);
+			expect((result.messages[0] as { nextWord: string }).nextWord).toBe(
+				after.boss.wordQueue[after.boss.wordIndex]
+			);
+		}
+		expect((await store.getHouse('h2'))!.boss.wordIndex).toBe(rounds);
+	});
+
+	test('knockout waits for the death delay, then exits the dungeon', async () => {
+		const store = await getStore();
+		const config = await liveConfig();
+		const house = (await store.getHouse('h3'))!;
+		house.room = config.game.roomCount + 1;
+		house.solvedRooms = Array.from({ length: config.game.roomCount }, (_, index) => index + 1);
+		house.boss.active = false;
+		house.answerLockUntil = null;
+		house.score = 200;
+		await store.saveHouse(house);
+
+		await enterBoss('h3', 'staff');
+		const dying = (await store.getHouse('h3'))!;
+		dying.boss.playerHp = 1;
+		dying.boss.attackAt = 0;
+		await store.saveHouse(dying);
+
+		const attackTick = await bossTick();
+		expect(attackTick.byHouse.get('h3') ?? []).toContainEqual(
+			expect.objectContaining({ type: 'boss.stun' })
+		);
+		const stunned = (await store.getHouse('h3'))!;
+		expect(stunned.boss.mode).toBe('stunned');
+		expect(stunned.boss.stunUntil).toBeGreaterThan(Date.now());
+		expect(stunned.score).toBeLessThan(200);
+
+		stunned.boss.stunUntil = Date.now() - 1;
+		await store.saveHouse(stunned);
+		const exitTick = await bossTick();
+		expect(exitTick.byHouse.get('h3') ?? []).toContainEqual(
+			expect.objectContaining({ type: 'boss.end', won: false, reason: 'knockout' })
+		);
+		const ended = (await store.getHouse('h3'))!;
+		expect(ended.boss.active).toBe(false);
+		expect(ended.answerLockUntil).toBeNull();
 	});
 });

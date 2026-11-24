@@ -69,7 +69,7 @@
 			wrongHealPercent: number('wrongHealPercent', 30),
 			counterDamage: number('counterDamage', 30),
 			bpm: number('bpm', 140),
-			stunSeconds: number('stunSeconds', 30),
+			stunSeconds: number('stunSeconds', 4),
 			stunPenalty: number('stunPenalty', 50)
 		};
 	}
@@ -93,7 +93,7 @@
 			wrongHealPercent: Number(value.wrongHealPercent ?? 30),
 			counterDamage: Number(value.counterDamage ?? 30),
 			bpm: Number(value.bpm ?? 140),
-			stunSeconds: Number(value.stunSeconds ?? 30),
+			stunSeconds: Number(value.stunSeconds ?? 4),
 			stunPenalty: Number(value.stunPenalty ?? 50)
 		};
 	}
@@ -324,7 +324,7 @@
 				<label>Wrong heal (%)<input type="number" bind:value={boss.wrongHealPercent} /></label>
 				<label>Counter damage<input type="number" bind:value={boss.counterDamage} /></label>
 				<label>Combo BPM<input type="number" bind:value={boss.bpm} /></label>
-				<label>Stun (s)<input type="number" bind:value={boss.stunSeconds} /></label>
+				<label>Death exit (s)<input type="number" bind:value={boss.stunSeconds} /></label>
 				<label>Stun penalty<input type="number" bind:value={boss.stunPenalty} /></label>
 			</div>
 		</article>

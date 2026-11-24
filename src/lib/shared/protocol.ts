@@ -177,7 +177,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		type: z.literal('boss.end'),
 		won: z.boolean(),
 		score: z.number(),
-		bossHp: z.number()
+		bossHp: z.number(),
+		reason: z.string().optional()
 	}),
 	z.object({
 		type: z.literal('boss.reset'),
