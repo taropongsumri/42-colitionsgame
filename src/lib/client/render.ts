@@ -133,42 +133,6 @@ function drawDownArrow(
 	ctx.restore();
 }
 
-/** Small compass arrow above the player, pointing at the plug or lift to visit. */
-export function drawGoalPointer(
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	view: Viewport,
-	from: { x: number; y: number },
-	to: { x: number; y: number } | null,
-	t: number
-) {
-	if (!to) return;
-	const dx = to.x - from.x, dy = to.y - from.y;
-	const distance = Math.hypot(dx, dy);
-	if (distance < 30) return;
-	const angle = Math.atan2(dy, dx);
-	const px = Math.round(from.x - cam.x + Math.cos(angle) * 15);
-	const py = Math.round(from.y - cam.y - 16 + Math.sin(angle) * 10 + Math.sin(t * 4) * 2);
-	const sx = Math.max(8, Math.min(view.w - 8, px));
-	const sy = Math.max(8, Math.min(view.h - 8, py));
-	ctx.save();
-	ctx.translate(sx, sy);
-	ctx.rotate(angle);
-	ctx.globalAlpha = 0.92;
-	ctx.fillStyle = '#ffd166';
-	ctx.shadowColor = '#ffb020';
-	ctx.shadowBlur = 7;
-	ctx.beginPath();
-	ctx.moveTo(8, 0);
-	ctx.lineTo(-4, -5);
-	ctx.lineTo(-1, 0);
-	ctx.lineTo(-4, 5);
-	ctx.closePath();
-	ctx.fill();
-	ctx.restore();
-	label(ctx, `${Math.round(distance / TILE)}m`, sx, sy - 11, '#ffe6a8', 0.85);
-}
-
 function drawOutdoorTile(ctx: CanvasRenderingContext2D, c: string, x: number, y: number, tx: number, ty: number) {
 	if (c === 'g' || c === 'Y') {
 		ctx.fillStyle = O.grass;

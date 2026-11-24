@@ -12,7 +12,7 @@ import {
 } from '../shared/map';
 import { HOUSES, type HouseId } from '../shared/types';
 import { move, transportAt } from './world';
-import { drawGoalPointer, renderFloor, type Actor, type Viewport } from './render';
+import { renderFloor, type Actor, type Viewport } from './render';
 
 const ANIMALS: Record<HouseId, string> = {
 	h1: 'scorpion',
@@ -371,19 +371,6 @@ export function createGame(options: GameOptions) {
 			next: nextPlug,
 			background: backgroundImage
 		});
-
-		// Always show where to go next: the unsolved plug for this room, or the lift
-		// when the floor boss gate is open. The plug itself also gets a GO marker.
-		const targetPlug = map.props.find(
-			(prop) => prop.roomId === highlight && !solved.has(prop.roomId)
-		);
-		const lift = bossReady ? map.props.find((prop) => prop.kind === 'elevator') : null;
-		const goal = targetPlug
-			? { x: targetPlug.x, y: targetPlug.y }
-			: lift
-				? { x: lift.x, y: lift.y }
-				: null;
-		drawGoalPointer(ctx, cam, view, pos, goal, t);
 
 		if (fade) {
 			const alpha = fade.t < FADE ? fade.t / FADE : 1 - (fade.t - FADE) / FADE;

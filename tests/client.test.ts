@@ -1,5 +1,4 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { drawGoalPointer } from '../src/lib/client/render';
 
 type Listener = (event: { key: string; target: unknown; preventDefault(): void }) => void;
 
@@ -68,32 +67,6 @@ function key(type: string, value: string) {
 }
 
 describe('client movement', () => {
-	test('a compass arrow points at the next plug only when it is far away', () => {
-		let fills = 0;
-		const spy = new Proxy(
-			{},
-			{
-				get(target, property) {
-					if (property === 'fill') return () => (fills += 1);
-					if (property in target) return (target as Record<string, unknown>)[property as string];
-					return () => ({ addColorStop() {} });
-				},
-				set(target, property, value) {
-					(target as Record<string, unknown>)[property as string] = value;
-					return true;
-				}
-			}
-		) as CanvasRenderingContext2D;
-		const camera = { x: 0, y: 0 };
-		const view = { w: 320, h: 180 };
-		drawGoalPointer(spy, camera, view, { x: 10, y: 10 }, { x: 100, y: 100 }, 0);
-		expect(fills).toBe(1);
-		drawGoalPointer(spy, camera, view, { x: 10, y: 10 }, { x: 12, y: 12 }, 0);
-		expect(fills).toBe(1);
-		drawGoalPointer(spy, camera, view, { x: 10, y: 10 }, null, 0);
-		expect(fills).toBe(1);
-	});
-
 	test('shift sprints faster and switches the HUD to RUN', () => {
 		const game = createGame({
 			canvas,

@@ -50,7 +50,7 @@ Pages: `/` join + machine password · `/game` fullscreen game · `/scoreboard` �
 4. The join page unlocks **Enter game**. `/game` fills the whole browser; use the **100% / 80%** control to zoom out 20% and see more of the map. Refreshing restores the saved state.
 5. Admin can **Kick** or **Move** a session to another machine. One active client per house.
 6. Disconnecting during a boss fight resets that boss's HP.
-7. The map is ported from the earlier prototype: 40×22-tile white cluster floors with round pizza tables, iMacs, chairs, pillars, stairs, lift and forecourt. Move with **WASD / arrow keys** (**Shift** sprints); a compass arrow and `GO` marker point at the next plug, and press **E** on a glowing plug (or **Q** for stairs down).
+7. The map is ported from the earlier prototype: 40×22-tile white cluster floors with round pizza tables, iMacs, chairs, pillars, stairs, lift and forecourt. Move with **WASD / arrow keys** (**Shift** sprints); a `GO` marker sits on the current plug, and press **E** on a glowing plug (or **Q** for stairs down).
 8. Answer in the terminal. Wrong answers lock that house's terminal for 10 seconds.
 9. A correct answer clears the room, awards points with a first/second/third-place bonus, and moves the house to the next room.
 10. Other houses appear as translucent shadows when they are in the same room (fog of war).
