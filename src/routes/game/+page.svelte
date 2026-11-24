@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { createGame, type BossOption, type Ghost, type Hud } from '$lib/client/game';
 	import BossFight from '$lib/components/game/BossFight.svelte';
 	import Terminal from '$lib/components/game/Terminal.svelte';
@@ -39,6 +39,9 @@
 		lockUntil: number | null;
 		swapReadyAt: number;
 		invulnUntil: number;
+		attackReadyAt: number;
+		attackCost: number;
+		shieldMax: number;
 	};
 
 	let canvas: HTMLCanvasElement;
@@ -62,9 +65,11 @@
 	let bossOptions: BossOption[] = [];
 	let boss: BossView | null = null;
 	let bossFeedback = '';
+	let wordPulse = 0;
+	let attackPulse = 0;
+	let lastChip = 0;
+	let bossAudio: HTMLAudioElement | null = null;
 	let now = Date.now();
-	/** The game view is locked to 80% so everyone sees the same amount of map. */
-	const zoomPercent = 80;
 
 	$: lockRemaining = lockUntil ? Math.max(0, Math.ceil((lockUntil - now) / 1000)) : 0;
 	$: timeLeft = scoreboard ? formatTime(scoreboard.timeLeftMs) : '--:--';
@@ -92,10 +97,30 @@
 		send({ type: 'answer', roomId, answer: value });
 	}
 
+	function startBossAudio() {
+		if (!bossAudio) {
+			bossAudio = new Audio('/audio/soundtrack_pplam.mp3');
+			bossAudio.loop = true;
+			bossAudio.volume = 0.45;
+		}
+		// Autoplay is unlocked by the key/click that opened the lift dialog.
+		void bossAudio.play().catch(() => undefined);
+	}
+
+	function stopBossAudio() {
+		if (!bossAudio) return;
+		bossAudio.pause();
+		bossAudio.currentTime = 0;
+	}
+
 	function enterBoss(bossId: string) {
 		if (state && rooms.length && state.solvedRooms.length < rooms.length) return;
 		game?.setPaused(true);
 		bossFeedback = '';
+		wordPulse = 0;
+		attackPulse = 0;
+		lastChip = 0;
+		startBossAudio();
 		send({ type: 'enterBoss', bossId });
 	}
 
@@ -103,9 +128,12 @@
 		send({ type: 'leaveBoss' });
 		boss = null;
 		bossFeedback = '';
+		stopBossAudio();
 		game?.setBossActive(false);
 		game?.setPaused(false);
 	}
+
+	onDestroy(stopBossAudio);
 
 	onMount(() => {
 		const timer = setInterval(() => (now = Date.now()), 250);
@@ -208,9 +236,13 @@
 							...view,
 							combo: view.combo ?? 0,
 							auditionLength: view.auditionLength ?? 0,
-							move: view.move ?? ''
+							move: view.move ?? '',
+							shieldMax: view.shieldMax ?? 100
 						};
 						bossFeedback = '';
+						wordPulse = 0;
+						attackPulse = 0;
+						startBossAudio();
 						game?.setBossActive(true);
 						game?.setPaused(true);
 						break;
@@ -221,15 +253,50 @@
 							nextWord: string;
 							shield: number;
 							bossHp: number;
+							combo: number;
+							chip: number;
 						};
 						if (boss) {
 							if (result.correct) boss.wordIndex += 1;
 							boss.shield = result.shield;
 							boss.hp = result.bossHp;
+							boss.combo = result.combo;
 						}
-						bossFeedback = result.correct
-							? 'WORD OK · shield charged'
-							: 'MISS · match the highlighted word';
+						if (result.correct) {
+							wordPulse += 1;
+							lastChip = result.chip;
+							bossFeedback = result.combo >= 5
+								? `COMBO x${result.combo}! · -${Math.round(result.chip)}`
+								: `WORD OK · -${Math.round(result.chip)} HP`;
+						} else {
+							bossFeedback = 'MISS · combo reset';
+						}
+						break;
+					}
+					case 'boss.playerAttack': {
+						const hit = message as unknown as {
+							damage: number;
+							shield: number;
+							bossHp: number;
+							combo: number;
+							readyAt: number;
+							reason?: string;
+							move: string;
+						};
+						if (boss) {
+							boss.shield = hit.shield;
+							boss.hp = hit.bossHp;
+							boss.combo = hit.combo;
+							boss.attackReadyAt = hit.readyAt;
+							boss.move = hit.move;
+						}
+						if (hit.reason === 'NO_SHIELD') bossFeedback = 'NO SHIELD · type words to charge';
+						else if (hit.reason === 'COOLDOWN') bossFeedback = 'ATTACK COOLING DOWN';
+						else if (hit.reason === 'BOSS_BUSY') bossFeedback = 'BOSS IS BUSY';
+						else {
+							attackPulse += 1;
+							bossFeedback = `${hit.move}! · -${Math.round(hit.damage)} HP`;
+						}
 						break;
 					}
 					case 'boss.attack': {
@@ -286,6 +353,7 @@
 						if (boss) {
 							boss.mode = 'stunned';
 							boss.playerHp = 0;
+							boss.combo = 0;
 							boss.lockUntil = stun.until;
 						}
 						bossFeedback = `STUNNED · -${stun.penalty} points`;
@@ -316,6 +384,7 @@
 						setTimeout(() => (notice = ''), 5000);
 						boss = null;
 						bossFeedback = '';
+						stopBossAudio();
 						game?.setBossActive(false);
 						game?.setPaused(false);
 						break;
@@ -323,6 +392,7 @@
 					case 'boss.reset':
 						boss = null;
 						bossFeedback = 'Boss reset · connection lost';
+						stopBossAudio();
 						game?.setBossActive(false);
 						game?.setPaused(false);
 						break;
@@ -342,6 +412,7 @@
 			disposed = true;
 			clearInterval(timer);
 			socket?.close();
+			stopBossAudio();
 			game?.destroy();
 		};
 	});
@@ -373,12 +444,7 @@
 				</span>
 			{/each}
 		</div>
-	</div>
-
-	<div class="hud top-right">
-		<div class="zoom-badge">zoom {zoomPercent}%</div>
 		<div class="links"><a href="/scoreboard">Board</a> · <a href="/">Leave</a></div>
-		<div class="socket">WS {socketStatus}</div>
 	</div>
 
 	<div class="rooms">
@@ -434,11 +500,18 @@
 			lockUntil={boss.lockUntil}
 			swapReadyAt={boss.swapReadyAt}
 			invulnUntil={boss.invulnUntil}
+			attackReadyAt={boss.attackReadyAt}
+			attackCost={boss.attackCost}
+			shieldMax={boss.shieldMax}
 			feedback={bossFeedback}
+			wordPulse={wordPulse}
+			attackPulse={attackPulse}
+			lastChip={lastChip}
 			onWord={(word) => send({ type: 'typing', word })}
 			onAnswer={(answer) => send({ type: 'auditionSubmit', answer })}
 			onMode={(mode) => send({ type: 'bossMode', mode })}
 			onSwap={() => send({ type: 'bossSwap' })}
+			onAttack={() => send({ type: 'bossAttack' })}
 			onLeave={closeBoss}
 		/>
 	{/if}
@@ -479,13 +552,6 @@
 		left: max(0.75rem, env(safe-area-inset-left));
 		max-width: min(20rem, calc(50vw - 1.1rem));
 	}
-	.top-right {
-		top: max(0.75rem, env(safe-area-inset-top));
-		right: max(0.75rem, env(safe-area-inset-right));
-		max-width: min(14rem, calc(50vw - 1.1rem));
-		text-align: right;
-		pointer-events: auto;
-	}
 	.brand { color: #f5b301; letter-spacing: 0.16em; font-size: 0.6rem; }
 	.house { font-size: 0.9rem; font-weight: 700; margin-top: 0.2rem; }
 	.house span { color: #9f95a6; font-size: 0.7rem; font-weight: 400; }
@@ -493,17 +559,8 @@
 	.stats .score { color: #6ee7a8; }
 	.stats .clock { color: #ffd166; font-weight: 700; }
 	.players { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 0.2rem; font-size: 0.65rem; }
-	.zoom-badge {
-		display: inline-block;
-		color: #f5b301;
-		border: 1px solid rgba(245, 179, 1, 0.5);
-		padding: 0.1rem 0.45rem;
-		font-weight: 700;
-		white-space: nowrap;
-	}
-	.links { margin-top: 0.35rem; }
+	.links { margin-top: 0.35rem; pointer-events: auto; }
 	a { color: #c4b5fd; }
-	.socket { color: #6f6776; font-size: 0.6rem; }
 	.rooms {
 		position: absolute;
 		bottom: max(0.75rem, env(safe-area-inset-bottom));
@@ -576,22 +633,18 @@
 			padding: 0.45rem 0.55rem;
 			border-radius: 4px;
 		}
-		.top-left { max-width: min(58vw, 15rem); }
-		.top-right { max-width: min(38vw, 10rem); }
+		.top-left { max-width: min(72vw, 18rem); }
 		.brand { letter-spacing: 0.08em; }
 		.house { font-size: 0.78rem; }
 		.house span { font-size: 0.6rem; }
 		.stats { gap: 0.35rem 0.6rem; }
 		.players { gap: 0.45rem; font-size: 0.58rem; }
-		.zoom-badge { font-size: 0.62rem; padding: 0.1rem 0.35rem; }
-		.socket { display: none; }
 		.rooms span { min-width: 1.25rem; height: 1.25rem; font-size: 0.58rem; }
 		.panel { padding: 1.4rem; }
 	}
 
 	@media (max-width: 420px) {
-		.top-left { max-width: 56vw; }
-		.top-right { max-width: 40vw; }
+		.top-left { max-width: 78vw; }
 		.players { display: none; }
 		.stats { flex-direction: column; gap: 0.15rem; }
 		.rooms { gap: 0.18rem; }
@@ -600,8 +653,7 @@
 
 	@media (max-height: 520px) {
 		.top-left .brand,
-		.top-left .players,
-		.socket { display: none; }
+		.top-left .players { display: none; }
 		.prompt { bottom: calc(2.25rem + env(safe-area-inset-bottom)); }
 		.toast { top: calc(4.5rem + env(safe-area-inset-top)); }
 	}

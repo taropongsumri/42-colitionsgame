@@ -16,6 +16,7 @@ import {
 	bossList,
 	bossTick,
 	enterBoss,
+	playerAttack,
 	resetMessage,
 	setBossMode,
 	submitBossAnswer,
@@ -138,7 +139,8 @@ async function runBossMessage(
 				| 'typing'
 				| 'auditionSubmit'
 				| 'bossMode'
-				| 'bossSwap';
+				| 'bossSwap'
+				| 'bossAttack';
 		}
 	>
 ) {
@@ -153,6 +155,8 @@ async function runBossMessage(
 			return setBossMode(house, message.mode);
 		case 'bossSwap':
 			return swapBossPlayer(house);
+		case 'bossAttack':
+			return playerAttack(house);
 		case 'leaveBoss': {
 			const store = await getStore();
 			const state = await store.getHouse(house);
@@ -321,6 +325,7 @@ const server = Bun.serve<SocketData>({
 				message.type === 'auditionSubmit' ||
 				message.type === 'bossMode' ||
 				message.type === 'bossSwap' ||
+				message.type === 'bossAttack' ||
 				message.type === 'leaveBoss'
 			) {
 				const result = await runBossMessage(ws.data.house, message);

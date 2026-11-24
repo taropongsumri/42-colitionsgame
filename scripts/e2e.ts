@@ -210,6 +210,33 @@ cursor = messages.length;
 socket.send(JSON.stringify({ type: 'typing', word: bossStart.words[bossStart.wordIndex] }));
 const bossWord = await waitForMessage('boss.word', cursor);
 assert(bossWord.correct === true, 'server accepts a validated typing word');
+assert(bossWord.combo === 1 && bossWord.chip > 0, 'correct word starts a damaging combo');
+
+// Build a combo, then spend the charged shield with a server-authoritative attack.
+for (let step = 1; step <= 2; step += 1) {
+	const current = (await store.getHouse('h1'))!;
+	const word = current.boss.wordQueue[current.boss.wordIndex];
+	cursor = messages.length;
+	socket.send(JSON.stringify({ type: 'typing', word }));
+	const chained = await waitForMessage('boss.word', cursor, (m) => m.type === 'boss.word' && m.correct === true);
+	assert(chained.combo === step + 1, `combo advances to x${step + 1}`);
+}
+
+const chargedHouse = (await store.getHouse('h1'))!;
+const shieldBeforeAttack = chargedHouse.boss.shield;
+assert(shieldBeforeAttack >= bossStart.attackCost, 'typing charged enough shield to attack');
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'bossAttack' }));
+const attack = await waitForMessage('boss.playerAttack', cursor);
+assert(attack.damage > 0 && typeof attack.move === 'string', 'attack deals server-calculated damage');
+assert(attack.shield === shieldBeforeAttack - bossStart.attackCost, 'attack spends shield');
+const coolingHouse = (await store.getHouse('h1'))!;
+assert(coolingHouse.boss.attackReadyAt > Date.now(), 'attack cooldown is stored server-side');
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'bossAttack' }));
+const cooling = await waitForMessage('boss.playerAttack', cursor);
+assert(cooling.reason === 'COOLDOWN' && cooling.damage === 0, 'rapid attacks are rejected by cooldown');
 
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'auditionSubmit', answer: 'definitely-wrong' }));

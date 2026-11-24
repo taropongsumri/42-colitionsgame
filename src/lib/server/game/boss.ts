@@ -56,7 +56,11 @@ function bossStart(state: HouseState, boss: BossConfig): ServerMessage {
 		stunUntil: state.boss.stunUntil,
 		lockUntil: state.boss.lockUntil,
 		swapReadyAt: state.boss.swapReadyAt,
-		invulnUntil: state.boss.invulnUntil
+		invulnUntil: state.boss.invulnUntil,
+		combo: state.boss.wordCombo,
+		attackReadyAt: state.boss.attackReadyAt,
+		attackCost: Math.max(10, Math.round(boss.shieldMax * 0.15)),
+		shieldMax: boss.shieldMax
 	};
 }
 
@@ -132,6 +136,7 @@ function stunPlayer(house: HouseState, boss: BossConfig): ServerMessage {
 	const until = now() + boss.stunSeconds * 1000;
 	fight.playerHp = 0;
 	fight.shield = 0;
+	fight.wordCombo = 0;
 	fight.mode = 'stunned';
 	fight.stunUntil = until;
 	fight.stunCount += 1;
@@ -213,12 +218,13 @@ export async function submitBossWord(houseId: HouseId, word: string): Promise<Bo
 	const boss = findBoss(config, house.boss.bossId);
 	if (!boss) return { messages: [error('NO_BOSS', 'Boss config was changed mid-fight')] };
 	const fight = house.boss;
-	if (fight.mode === 'stunned' || fight.mode === 'audition') {
-		return { messages: [error('BOSS_BUSY', 'The boss is busy right now')] };
+	if (fight.mode !== 'typing') {
+		return { messages: [error('BOSS_BUSY', 'Switch to typing mode first')] };
 	}
 
 	const expected = fight.wordQueue[fight.wordIndex] ?? '';
 	if (normalizeAnswer(word) !== normalizeAnswer(expected)) {
+		fight.wordCombo = 0;
 		return {
 			messages: [
 				{
@@ -229,7 +235,9 @@ export async function submitBossWord(houseId: HouseId, word: string): Promise<Bo
 					shield: fight.shield,
 					bossHp: fight.hp,
 					maxHp: fight.maxHp,
-					wordsDone: fight.wordsDone
+					wordsDone: fight.wordsDone,
+					combo: 0,
+					chip: 0
 				}
 			]
 		};
@@ -239,7 +247,13 @@ export async function submitBossWord(houseId: HouseId, word: string): Promise<Bo
 	const gain = boss.shieldPerWord * rankMultiplier(config, houseId, boss, houses);
 	fight.shield = Math.min(boss.shieldMax, fight.shield + gain);
 	const floor = fight.maxHp * (boss.chipFloor || config.game.bossChipFloor);
-	fight.hp = Math.max(floor, fight.hp - boss.chipPerWord);
+	const beforeHp = fight.hp;
+	// Consecutive correct words build a combo; higher combos chip harder.
+	const combo = fight.wordCombo + 1;
+	const multiplier = 1 + Math.min(combo - 1, 20) * 0.15;
+	fight.hp = Math.max(floor, fight.hp - boss.chipPerWord * multiplier);
+	const chip = Math.round(beforeHp - fight.hp);
+	fight.wordCombo = combo;
 	fight.wordsDone += 1;
 	fight.wordIndex += 1;
 	fight.wordQueue.push(buildQueue(boss, config, 1)[0] ?? 'code');
@@ -255,7 +269,57 @@ export async function submitBossWord(houseId: HouseId, word: string): Promise<Bo
 				shield: fight.shield,
 				bossHp: fight.hp,
 				maxHp: fight.maxHp,
-				wordsDone: fight.wordsDone
+				wordsDone: fight.wordsDone,
+				combo,
+				chip
+			}
+		]
+	};
+}
+
+/** Spend shield for an immediate hit. Damage and cooldown stay server-side. */
+export async function playerAttack(houseId: HouseId): Promise<BossResult> {
+	const store = await getStore();
+	const config = await liveConfig();
+	const house = await store.getHouse(houseId);
+	if (!house?.boss.active) return { messages: [error('NO_BOSS', 'No active boss fight')] };
+	const boss = findBoss(config, house.boss.bossId);
+	if (!boss) return { messages: [error('NO_BOSS', 'Boss config was changed mid-fight')] };
+	const fight = house.boss;
+	const at = now();
+	const cost = Math.max(10, Math.round(boss.shieldMax * 0.15));
+	const readyAt = fight.attackReadyAt || at;
+	const move = HOUSES[houseId].moves[fight.wordCombo % HOUSES[houseId].moves.length];
+
+	if (fight.mode === 'stunned' || fight.mode === 'audition') {
+		return { messages: [{ type: 'boss.playerAttack', move, damage: 0, shield: fight.shield, bossHp: fight.hp, maxHp: fight.maxHp, combo: fight.wordCombo, readyAt, reason: 'BOSS_BUSY' }] };
+	}
+	if (at < readyAt) {
+		return { messages: [{ type: 'boss.playerAttack', move, damage: 0, shield: fight.shield, bossHp: fight.hp, maxHp: fight.maxHp, combo: fight.wordCombo, readyAt, reason: 'COOLDOWN' }] };
+	}
+	if (fight.shield < cost) {
+		return { messages: [{ type: 'boss.playerAttack', move, damage: 0, shield: fight.shield, bossHp: fight.hp, maxHp: fight.maxHp, combo: fight.wordCombo, readyAt, reason: 'NO_SHIELD' }] };
+	}
+
+	fight.shield -= cost;
+	const floor = fight.maxHp * (boss.chipFloor || config.game.bossChipFloor);
+	const beforeHp = fight.hp;
+	const damage = Math.round(boss.shieldPerWord * 2.5 * (1 + Math.min(fight.wordCombo, 20) * 0.08));
+	fight.hp = Math.max(floor, fight.hp - damage);
+	fight.attackReadyAt = at + 900;
+	await store.saveHouse(house);
+
+	return {
+		messages: [
+			{
+				type: 'boss.playerAttack',
+				move,
+				damage: Math.round(beforeHp - fight.hp),
+				shield: fight.shield,
+				bossHp: fight.hp,
+				maxHp: fight.maxHp,
+				combo: fight.wordCombo,
+				readyAt: fight.attackReadyAt
 			}
 		]
 	};

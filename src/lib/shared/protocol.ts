@@ -21,7 +21,9 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('typing'), word: z.string().max(64) }),
 	z.object({ type: z.literal('auditionSubmit'), answer: z.string().max(500) }),
 	z.object({ type: z.literal('bossMode'), mode: z.enum(['typing', 'attack']) }),
-	z.object({ type: z.literal('bossSwap') })
+	z.object({ type: z.literal('bossSwap') }),
+	/** Spend shield for an immediate, server-validated hit on the boss. */
+	z.object({ type: z.literal('bossAttack') })
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
@@ -102,7 +104,11 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		stunUntil: z.number().nullable(),
 		lockUntil: z.number().nullable(),
 		swapReadyAt: z.number(),
-		invulnUntil: z.number()
+		invulnUntil: z.number(),
+		combo: z.number(),
+		attackReadyAt: z.number(),
+		attackCost: z.number(),
+		shieldMax: z.number()
 	}),
 	z.object({
 		type: z.literal('boss.word'),
@@ -112,7 +118,20 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		shield: z.number(),
 		bossHp: z.number(),
 		maxHp: z.number(),
-		wordsDone: z.number()
+		wordsDone: z.number(),
+		combo: z.number(),
+		chip: z.number()
+	}),
+	z.object({
+		type: z.literal('boss.playerAttack'),
+		move: z.string(),
+		damage: z.number(),
+		shield: z.number(),
+		bossHp: z.number(),
+		maxHp: z.number(),
+		combo: z.number(),
+		readyAt: z.number(),
+		reason: z.string().optional()
 	}),
 	z.object({
 		type: z.literal('boss.attack'),

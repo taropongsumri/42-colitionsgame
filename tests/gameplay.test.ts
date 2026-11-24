@@ -18,6 +18,7 @@ const {
 	bossTick,
 	enterBoss,
 	findBoss,
+	playerAttack,
 	submitBossAnswer,
 	submitBossWord
 } = await import('../src/lib/server/game/boss');
@@ -206,16 +207,50 @@ describe('phase 2 gameplay', () => {
 
 		const entered = await enterBoss('h1', 'staff');
 		const start = entered.messages.find((message) => message.type === 'boss.start');
-		expect(start).toMatchObject({ type: 'boss.start', boss: expect.objectContaining({ id: 'staff' }) });
+		expect(start).toMatchObject({
+			type: 'boss.start',
+			boss: expect.objectContaining({ id: 'staff' }),
+			shieldMax: boss!.shieldMax,
+			attackCost: expect.any(Number)
+		});
 		expect(JSON.stringify(entered.messages)).not.toContain('"answers"');
 		expect(JSON.stringify(entered.messages)).not.toContain(boss!.answers[0]);
 
 		const fighting = (await store.getHouse('h1'))!;
 		const currentWord = fighting.boss.wordQueue[fighting.boss.wordIndex];
 		const wrongWord = await submitBossWord('h1', 'not-in-the-queue');
-		expect(wrongWord.messages[0]).toMatchObject({ type: 'boss.word', correct: false });
+		expect(wrongWord.messages[0]).toMatchObject({ type: 'boss.word', correct: false, combo: 0 });
 		const rightWord = await submitBossWord('h1', currentWord);
-		expect(rightWord.messages[0]).toMatchObject({ type: 'boss.word', correct: true });
+		expect(rightWord.messages[0]).toMatchObject({ type: 'boss.word', correct: true, combo: 1 });
+		expect((rightWord.messages[0] as { chip: number }).chip).toBeGreaterThan(0);
+
+		// Consecutive words build combo and increase chip damage.
+		const comboState = (await store.getHouse('h1'))!;
+		const secondWord = comboState.boss.wordQueue[comboState.boss.wordIndex];
+		const secondHit = await submitBossWord('h1', secondWord);
+		expect(secondHit.messages[0]).toMatchObject({ type: 'boss.word', correct: true, combo: 2 });
+		expect((secondHit.messages[0] as { chip: number }).chip).toBeGreaterThanOrEqual(
+			(rightWord.messages[0] as { chip: number }).chip
+		);
+
+		// Client cannot choose damage: shield is spent and damage is derived server-side.
+		const charged = (await store.getHouse('h1'))!;
+		const thirdWord = charged.boss.wordQueue[charged.boss.wordIndex];
+		await submitBossWord('h1', thirdWord);
+		const shieldBefore = (await store.getHouse('h1'))!.boss.shield;
+		const attack = await playerAttack('h1');
+		expect(attack.messages[0]).toMatchObject({ type: 'boss.playerAttack' });
+		const hit = attack.messages[0] as { damage: number; shield: number; readyAt: number; move: string };
+		expect(typeof hit.move).toBe('string');
+		expect(typeof hit.damage).toBe('number');
+		expect(hit.damage).toBeGreaterThan(0);
+		expect(hit.shield).toBe(shieldBefore - Math.max(10, Math.round(boss!.shieldMax * 0.15)));
+		expect(hit.readyAt).toBeGreaterThan(Date.now());
+		const cooling = await playerAttack('h1');
+		expect(cooling.messages[0]).toMatchObject({ type: 'boss.playerAttack', reason: 'COOLDOWN', damage: 0 });
+
+		const wrongAgain = await submitBossWord('h1', 'not-in-the-queue');
+		expect(wrongAgain.messages[0]).toMatchObject({ type: 'boss.word', correct: false, combo: 0 });
 
 		const wrongAnswer = await submitBossAnswer('h1', 'definitely-not-the-answer');
 		expect(wrongAnswer.messages[0]).toMatchObject({ type: 'boss.answerResult', correct: false });

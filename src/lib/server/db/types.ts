@@ -46,6 +46,9 @@ export interface BossState {
 	stunCount: number;
 	penalty: number;
 	wordsDone: number;
+	/** Consecutive correct typing words; drives damage bonus and visual combos. */
+	wordCombo: number;
+	attackReadyAt: number;
 	wordQueue: string[];
 	wordIndex: number;
 	audition: BossAudition | null;
@@ -70,6 +73,8 @@ export function emptyBoss(overrides: Partial<BossState> = {}): BossState {
 		stunCount: 0,
 		penalty: 0,
 		wordsDone: 0,
+		wordCombo: 0,
+		attackReadyAt: 0,
 		wordQueue: [],
 		wordIndex: 0,
 		audition: null,
