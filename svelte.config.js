@@ -5,7 +5,10 @@ import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 const config = {
 	preprocess: vitePreprocess(),
 	kit: {
-		adapter: adapter()
+		adapter: adapter(),
+		// Pin a stable version name so SSR and client builds share one hydration hash.
+		// The default is Date.now(), which differs between `svelte-kit sync` and `vite build`.
+		version: { name: 'coalition-backrooms' }
 	}
 };
 

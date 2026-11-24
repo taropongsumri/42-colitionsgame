@@ -811,9 +811,13 @@
 			<div class="question">{boss.question}</div>
 			{#if fighting && localMode === 'typing'}
 				<div class="words">
-					<span class="done">{target.slice(0, typed.length)}</span><span class="next">{target[typed.length] ?? '␣'}</span><span class="rest">{target.slice(typed.length + 1)}</span>
+					<span class="current"><span class="done">{target.slice(0, typed.length)}</span><span class="next">{target[typed.length] ?? '␣'}</span><span class="rest">{target.slice(typed.length + 1)}</span></span>
 					{#if showNextWords}
-						<span class="up">NEXT {words.slice(wordIndex + 1, wordIndex + 7).join(' ')}</span>
+						<span class="up">
+							{#each words.slice(wordIndex + 1, wordIndex + 7) as upcoming, index}
+								{#if index > 0}{' '}{/if}<span class:soon={index === 0}>{upcoming}</span>
+							{/each}
+						</span>
 					{/if}
 				</div>
 			{:else if fighting && localMode === 'attack'}
@@ -1016,11 +1020,13 @@
 	.typebox.attack { border-color: #ff5d6c; border-style: dashed; }
 	.mode { color: #9a90b0; font-size: clamp(0.6rem, 1.6vw, 0.72rem); margin-bottom: 4px; }
 	.question { font-size: clamp(0.7rem, 2.2vw, 0.9rem); margin-bottom: 6px; }
-	.words { font-family: 'Press Start 2P', ui-monospace, monospace; font-size: clamp(0.7rem, 2.2vw, 1rem); line-height: 1.8; word-break: break-word; }
+	.words { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 12px; font-family: 'Press Start 2P', ui-monospace, monospace; font-size: clamp(0.7rem, 2.2vw, 1rem); line-height: 1.8; word-break: break-word; }
+	.current { white-space: nowrap; }
 	.done { color: #6be38a; }
 	.next { text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 4px; }
 	.rest { color: #efe8ff; }
-	.up { color: #6f6780; margin-left: 12px; }
+	.up { display: inline-flex; flex-wrap: wrap; gap: 0 10px; color: #6f6780; }
+	.up .soon { color: #fff4b8; }
 	.blind { font-family: 'Press Start 2P', ui-monospace, monospace; color: #ff5d6c; letter-spacing: 4px; min-height: 28px; }
 	.feedback { color: #ffd23f; font-size: clamp(0.62rem, 1.8vw, 0.76rem); margin-top: 4px; }
 	.hint { color: #7c748c; font-size: clamp(0.58rem, 1.6vw, 0.68rem); margin-top: 6px; }

@@ -195,6 +195,7 @@ assert(
 	typeof defaultBoss.showNextWords === 'boolean' && typeof defaultBoss.comboBreakStackPercent === 'number',
 	'per-boss combo settings are configured'
 );
+assert(defaultBoss.showNextWords === true, 'next-word preview is enabled by default');
 const toggle = await fetch(`${base}/api/admin/config`, {
 	method: 'PUT',
 	headers: adminHeaders,
@@ -239,6 +240,7 @@ const bossConfig = (await (
 };
 const configuredBoss = bossConfig.config.boss.bosses[0];
 assert(!!configuredBoss && configuredBoss.answers.length > 0, 'boss config is available');
+assert(configuredBoss.showNextWords === true, 'next-word preview is restored after config reset');
 
 const bossHouse = (await store.getHouse('h1'))!;
 bossHouse.room = 11;
