@@ -173,6 +173,7 @@ describe('phase 2 gameplay', () => {
 		await store.saveHouse(before!);
 
 		await control({ action: 'start' });
+		expect((await store.getMeta()).open).toBe(true);
 		const started = await timeLeftMs();
 		expect(started).toBeGreaterThan(0);
 		await control({ action: 'pause' });
@@ -197,9 +198,11 @@ describe('phase 2 gameplay', () => {
 		expect((await store.getMeta()).announcement).toBe('hello players');
 		await control({ action: 'end' });
 		expect((await store.getMeta()).finished).toBe(true);
+		expect((await store.getMeta()).open).toBe(false);
 
 		const meta = await startClock();
 		expect(meta.finished).toBe(false);
+		expect(meta.open).toBe(true);
 	});
 
 	test('boss fight is server-authoritative and bosses can be added to config', async () => {

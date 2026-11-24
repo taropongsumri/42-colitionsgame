@@ -24,6 +24,7 @@ interface Persisted {
 }
 
 const defaultMeta = (): GameMeta => ({
+	open: false,
 	startedAt: null,
 	endsAt: null,
 	paused: false,

@@ -34,6 +34,23 @@ const accept = await fetch(`${base}/api/admin/machines/${code}`, {
 });
 assert(accept.ok, 'admin accepted machine');
 
+// 2b. Accepted players wait outside until the admin opens the building.
+const opening = await fetch(`${base}/api/admin/control`, {
+	method: 'POST',
+	headers: adminHeaders,
+	body: JSON.stringify({ action: 'start' })
+});
+assert(opening.ok, 'admin opened the building and started the clock');
+const opened = (await (await fetch(`${base}/api/scoreboard`)).json()) as {
+	open: boolean;
+	timeLeftMs: number;
+};
+assert(opened.open === true, 'scoreboard reports the building is open');
+assert(
+	opened.timeLeftMs > 89 * 60 * 1000 && opened.timeLeftMs <= 90 * 60 * 1000,
+	'90-minute countdown started'
+);
+
 // 3. Reconnect view shows the house.
 const view = (await (
 	await fetch(`${base}/api/session`, { headers: { cookie } })

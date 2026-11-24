@@ -31,7 +31,7 @@ bun run dev
 - Vite: `http://localhost:5173` — the app, with HMR
 - Bun socket server: `http://localhost:3000` — `/ws/*` plus an HTTP proxy to Vite
 
-Open `http://localhost:5173` — that is the **join page**. After the admin accepts your machine code, click **Enter game** to open `/game`.
+Open `http://localhost:5173` — that is the **join page**. After the admin accepts your machine code, click **Enter game** to open `/game`; players wait outside at KLLC until the admin opens the building. Admin and spectator pages are intentionally not linked — open `/admin` or `/spectate` directly.
 
 ### Production-style (one process)
 ```bash
@@ -47,7 +47,7 @@ Pages: `/` join + machine password · `/game` fullscreen game · `/scoreboard` �
 1. Open `/` → a 4-character machine code appears. This is the same "password" shown in `/admin`.
 2. Open `/admin`, enter the admin password (default `admin` from `.env`).
 3. Assign the machine to `h1`, `h2`, or `h3`, then click **Accept**.
-4. The join page unlocks **Enter game**. `/game` fills the whole browser; use the **100% / 80%** control to zoom out 20% and see more of the map. Refreshing restores the saved state.
+4. The join page unlocks **Enter game**. Accepted players appear in the KLLC outdoor forecourt and cannot enter the building until the admin presses **Open building · 90 min**. `/game` fills the whole browser; use the **100% / 80%** control to zoom out 20% and see more of the map. Refreshing restores the saved state.
 5. Admin can **Kick** or **Move** a session to another machine. One active client per house.
 6. Disconnecting during a boss fight resets that boss's HP.
 7. The map is ported from the earlier prototype: 40×22-tile white cluster floors with round pizza tables, iMacs, chairs, pillars, stairs, lift and forecourt. Move with **WASD / arrow keys** (**Shift** sprints); a `GO` marker sits on the current plug, and press **E** on a glowing plug (or **Q** for stairs down).

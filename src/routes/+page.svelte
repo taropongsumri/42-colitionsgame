@@ -60,7 +60,7 @@
 <main>
 	<nav>
 		<span class="brand">COALITION BACKROOMS</span>
-		<span><a href="/scoreboard">Scoreboard</a> · <a href="/spectate">Spectator</a> · <a href="/admin">Admin</a></span>
+		<span><a href="/scoreboard">Scoreboard</a></span>
 	</nav>
 
 	<section class="card">
@@ -84,7 +84,7 @@
 		<div class="status" class:ready={accepted}>
 			{#if accepted}
 				<p class="ok">Accepted — {house ? HOUSES[house].name : 'house assigned'}</p>
-				<p>You can enter the game now.</p>
+				<p>Wait outside at KLLC until the admin opens the building.</p>
 			{:else if house}
 				<p>{HOUSES[house].name} assigned — waiting for the admin to accept.</p>
 			{:else}

@@ -147,6 +147,7 @@ export async function control(input: ControlInput): Promise<{ notice?: string }>
 			break;
 		}
 		case 'end': {
+			meta.open = false;
 			meta.finished = true;
 			meta.paused = true;
 			meta.remainingMs = 0;

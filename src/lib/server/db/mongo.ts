@@ -100,6 +100,7 @@ export class MongoStore implements Store {
 	async getMeta(): Promise<GameMeta> {
 		const doc = await this.meta.findOne({ _id: 'game' });
 		return {
+			open: false,
 			startedAt: null,
 			endsAt: null,
 			paused: false,

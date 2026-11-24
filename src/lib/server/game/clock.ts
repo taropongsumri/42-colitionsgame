@@ -3,6 +3,7 @@ import { getStore, type Store } from '../db';
 import type { GameMeta } from '../db/types';
 
 export const defaultMeta = (): GameMeta => ({
+	open: false,
 	startedAt: null,
 	endsAt: null,
 	paused: false,
@@ -26,6 +27,7 @@ export async function startClock(): Promise<GameMeta> {
 	const config = await liveConfig();
 	const meta: GameMeta = {
 		...defaultMeta(),
+		open: true,
 		startedAt: Date.now(),
 		endsAt: Date.now() + config.game.durationMinutes * 60 * 1000
 	};

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
+import { FLOORS } from '../src/lib/shared/map';
 
 type Listener = (event: { key: string; target: unknown; preventDefault(): void }) => void;
 
@@ -74,7 +75,8 @@ describe('client movement', () => {
 			onHud: (next) => (hud = next),
 			onMove: (position) => (lastMove = position)
 		});
-		const startX = 56;
+		// Players now start on the outdoor KLLC forecourt, whose spawn differs from floor 1.
+		const startX = FLOORS[0].spawn.x;
 		key('keydown', 'd');
 		step(40);
 		expect(hud?.sprinting).toBe(false);

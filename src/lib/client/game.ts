@@ -99,8 +99,9 @@ export function createGame(options: GameOptions) {
 		(Object.keys(HOUSES) as HouseId[]).map((id) => [id, loadImage(`/sprites/player_${ANIMALS[id]}.png`)])
 	) as Record<HouseId, HTMLImageElement>;
 
-	let floorIndex = Math.max(0, FLOORS.findIndex((item) => item.floor === 1));
-	let map: FloorMap = FLOORS[floorIndex];
+	// Accepted players start outside the building (the outdoor forecourt) until
+	// the admin opens the game and begins the 90-minute clock.
+	let map: FloorMap = FLOORS.find((item) => item.floor === 0) ?? FLOORS[0];
 	const pos = { x: map.spawn.x, y: map.spawn.y };
 	const pet = { x: pos.x - 14, y: pos.y + 2, flip: false };
 	const trail: { t: number; x: number; y: number }[] = [];
@@ -111,7 +112,7 @@ export function createGame(options: GameOptions) {
 	let bossSelected = 0;
 	let bossReady = false;
 	let bossActive = false;
-	let currentFloor = 1;
+	let currentFloor = 0;
 	let currentPlug = 1;
 	let bossRetryAt: number | null = null;
 
@@ -119,6 +120,7 @@ export function createGame(options: GameOptions) {
 	let highlight: string | null = questionTableIdForRoom(1);
 	let nextPlug: string | null = null;
 	let near: Prop | null = null;
+	let open = false;
 	let paused = false;
 	let running = true;
 	let zoom = 0.8;
@@ -197,8 +199,6 @@ export function createGame(options: GameOptions) {
 			if (!fade.switched && fade.t >= FADE) {
 				const next = floorByNumber(fade.to.floor);
 				if (next) {
-					const index = FLOORS.indexOf(next);
-					if (index >= 0) floorIndex = index;
 					map = next;
 					pos.x = fade.to.x;
 					pos.y = fade.to.y;
@@ -258,7 +258,16 @@ export function createGame(options: GameOptions) {
 		near = nearestPlug();
 		const transport = transportAt(map, pos.x, pos.y);
 
+		if (!open && transport) {
+			emitHud('Doors closed · waiting for admin to open the game');
+			return;
+		}
+
 		if (near?.roomId) {
+			if (!open) {
+				emitHud('Waiting for admin to open the building');
+				return;
+			}
 			const isCurrent = near.roomId === highlight;
 			const prompt = !isCurrent
 				? 'E · Check this socket'
@@ -428,7 +437,11 @@ export function createGame(options: GameOptions) {
 			currentPlug = ((Math.max(1, room) - 1) % QUESTIONS_PER_FLOOR) + 1;
 			highlight = room <= TOTAL_QUESTION_SLOTS ? questionTableIdForRoom(room) : null;
 			nextPlug = null;
-			if (currentFloor !== map.floor) switchFloor(floorTarget(currentFloor, 'stairs'));
+			if (open && currentFloor !== map.floor) switchFloor(floorTarget(currentFloor, 'stairs'));
+		},
+		setOpen(next: boolean) {
+			open = next;
+			if (!next) interactQueued = null;
 		},
 		setSolved(ids: Iterable<string>) {
 			solved.clear();

@@ -224,7 +224,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		rows: z.array(z.unknown()),
 		timeLeftMs: z.number(),
 		paused: z.boolean(),
-		announcement: z.string().nullable()
+		announcement: z.string().nullable(),
+		open: z.boolean()
 	}),
 	z.object({ type: z.literal('notice'), text: z.string() }),
 	z.object({

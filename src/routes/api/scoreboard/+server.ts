@@ -23,6 +23,7 @@ export const GET: RequestHandler = async () => {
 		timeLeftMs: left,
 		paused: meta.paused,
 		finished: meta.finished,
-		announcement: meta.announcement
+		announcement: meta.announcement,
+		open: meta.open === true
 	});
 };

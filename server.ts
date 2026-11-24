@@ -191,7 +191,8 @@ async function scoreboard(): Promise<ServerMessage> {
 		})),
 		timeLeftMs: left,
 		paused: meta.paused,
-		announcement: meta.announcement
+		announcement: meta.announcement,
+		open: meta.open === true
 	};
 }
 
@@ -478,6 +479,28 @@ const server = Bun.serve<SocketData>({
 
 			if (!ws.data.house) {
 				send(ws, { type: 'error', code: 'NO_HOUSE', message: 'No house assigned' });
+				return;
+			}
+
+			// Accepted players wait outside until the admin opens the building.
+			const gameOpen = (await (await getStore()).getMeta()).open;
+			if (
+				!gameOpen &&
+				(message.type === 'interact' ||
+					message.type === 'answer' ||
+					message.type === 'enterBoss' ||
+					message.type === 'typing' ||
+					message.type === 'auditionSubmit' ||
+					message.type === 'bossMode' ||
+					message.type === 'bossSwap' ||
+					message.type === 'bossAttack' ||
+					message.type === 'leaveBoss')
+			) {
+				send(ws, {
+					type: 'error',
+					code: 'GAME_NOT_OPEN',
+					message: 'Waiting for admin to open the game'
+				});
 				return;
 			}
 

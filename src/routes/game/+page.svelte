@@ -27,6 +27,7 @@
 		timeLeftMs: number;
 		paused: boolean;
 		announcement: string | null;
+		open: boolean;
 	};
 	type BossView = {
 		boss: BossOption;
@@ -283,6 +284,7 @@
 						break;
 					case 'scoreboard':
 						scoreboard = message as unknown as Scoreboard;
+						game?.setOpen(scoreboard.open);
 						break;
 					case 'question':
 						terminal = {
@@ -561,7 +563,9 @@
 	<canvas bind:this={canvas} aria-label="Coalition Backrooms game world"></canvas>
 
 	<div class="hud top-left">
-		<div class="brand">COALITION BACKROOMS</div>
+		<div class="brand">
+			{scoreboard && !scoreboard.open ? 'KLLC · KMITL LIFE LEARN CENTER' : 'COALITION BACKROOMS'}
+		</div>
 		<div class="house userbox" style:color={HOUSES[house].color}>
 			{HOUSES[house].name} <span>· machine {session?.code ?? '····'}</span>
 		</div>
@@ -592,6 +596,14 @@
 			</span>
 		{/each}
 	</div>
+
+	{#if scoreboard && !scoreboard.open}
+		<div class="waiting">
+			<div class="waiting-title">KLLC</div>
+			<div class="waiting-sub">KMITL LIFE LEARN CENTER</div>
+			<p>You are outside. The doors open when the admin starts the game and the 90-minute clock begins.</p>
+		</div>
+	{/if}
 
 	{#if hud.prompt && !terminal}
 		<div class="prompt">{hud.prompt}</div>
@@ -765,6 +777,39 @@
 		font-size: clamp(0.65rem, 2.2vw, 0.75rem);
 		text-align: center;
 		max-width: calc(100vw - 1.5rem);
+	}
+	.waiting {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		transform: translate(-50%, -50%);
+		width: min(28rem, calc(100vw - 2rem));
+		padding: 1.25rem 1.5rem;
+		background: rgba(10, 8, 14, 0.9);
+		border: 1px solid #f5b301;
+		border-radius: 10px;
+		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+		text-align: center;
+		pointer-events: none;
+	}
+	.waiting-title {
+		color: #f5b301;
+		font-size: clamp(2rem, 9vw, 4rem);
+		font-weight: 700;
+		letter-spacing: 0.12em;
+		line-height: 1;
+	}
+	.waiting-sub {
+		margin-top: 0.35rem;
+		color: #c4b5fd;
+		font-size: clamp(0.6rem, 2.5vw, 0.85rem);
+		letter-spacing: 0.16em;
+	}
+	.waiting p {
+		margin: 0.85rem 0 0;
+		color: #bdb4c2;
+		font-size: clamp(0.7rem, 2.4vw, 0.82rem);
+		line-height: 1.5;
 	}
 	.overlay {
 		position: absolute;

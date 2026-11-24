@@ -17,6 +17,7 @@
 		paused: boolean;
 		finished: boolean;
 		announcement: string | null;
+		open: boolean;
 	};
 
 	let data: Data | null = null;
@@ -51,6 +52,7 @@
 <p><a href="/">Back to game</a></p>
 
 <p class="clock">{data ? format(data.timeLeftMs) : '--:--'}</p>
+{#if data && !data.open}<p class="status">WAITING OUTSIDE · KLLC</p>{/if}
 {#if data?.paused}<p class="status">PAUSED</p>{/if}
 {#if data?.finished}<p class="status">GAME OVER</p>{/if}
 {#if data?.announcement}<p class="announce">{data.announcement}</p>{/if}

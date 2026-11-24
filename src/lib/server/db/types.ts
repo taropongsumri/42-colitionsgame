@@ -108,6 +108,8 @@ export interface HouseState {
 }
 
 export interface GameMeta {
+	/** False while accepted players wait outside; opening starts the clock. */
+	open: boolean;
 	startedAt: number | null;
 	endsAt: number | null;
 	paused: boolean;

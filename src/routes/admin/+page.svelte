@@ -447,7 +447,6 @@
 		<nav class="flex flex-wrap gap-2">
 			<Button href="/" variant="outline" size="sm">Back to game</Button>
 			<Button href="/scoreboard" variant="outline" size="sm">Scoreboard</Button>
-			<Button href="/spectate" variant="outline" size="sm">Spectator</Button>
 		</nav>
 	</header>
 
@@ -667,11 +666,16 @@
 			<Card>
 				<CardHeader class="pb-3">
 					<CardTitle class="text-base text-amber-300">Game control</CardTitle>
-					<CardDescription class="text-xs">Every action posts to /api/admin/control.</CardDescription>
+					<CardDescription class="text-xs">
+						Open the building to release players from the KLLC forecourt and start the 90-minute
+						clock. Every action posts to /api/admin/control.
+					</CardDescription>
 				</CardHeader>
 				<CardContent class="space-y-4">
 					<div class="flex flex-wrap items-end gap-2">
-						<Button size="sm" disabled={!ready} onclick={() => control('start')}>Start game</Button>
+						<Button size="sm" disabled={!ready} onclick={() => control('start')}
+							>Open building · 90 min</Button
+						>
 						<Button size="sm" variant="secondary" disabled={!ready} onclick={() => control('pause')}
 							>Pause</Button
 						>
