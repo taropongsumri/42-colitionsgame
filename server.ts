@@ -6,7 +6,7 @@ import {
 	type ClientMessage,
 	type ServerMessage
 } from './src/lib/shared/protocol';
-import { FLOORS, floorAndPlug, floorForRoom } from './src/lib/shared/map';
+import { FLOORS, TILE, floorAndPlug, floorForRoom } from './src/lib/shared/map';
 import type { HouseId } from './src/lib/shared/types';
 import { getStore } from './src/lib/server/db';
 import { emptyBoss } from './src/lib/server/db/types';
@@ -27,6 +27,13 @@ import {
 import { interact, submitAnswer } from './src/lib/server/game/play';
 import { getSessionView, markConnected, onDisconnect, SESSION_COOKIE } from './src/lib/server/lobby';
 import { liveConfig } from './src/lib/server/config';
+import {
+	clampCosmetic,
+	createRateLimiter,
+	isAllowedOrigin,
+	isInternalAuthorized,
+	MAX_WS_MESSAGE_BYTES
+} from './src/lib/server/security';
 
 type SocketData = {
 	path: string;
@@ -46,7 +53,25 @@ type AppFetch = (
 	server: Bun.Server<SocketData>
 ) => Response | Promise<Response> | undefined;
 
+if (env.mode === 'prod') {
+	if (!env.internalSecret) console.warn('[security] INTERNAL_SECRET unset: /internal/* calls are disabled');
+	if (env.adminPassword === 'admin') console.warn('[security] ADMIN_PASSWORD is still the default');
+	if (env.spectatorKey === 'spectate') console.warn('[security] SPECTATOR_KEY is still the default');
+	if (!env.publicOrigin) console.warn('[security] PUBLIC_ORIGIN unset: browser clients must share the server host');
+}
+
 const port = env.port;
+const allowedOrigins = new Set<string>([
+	`http://localhost:${port}`,
+	`http://127.0.0.1:${port}`
+]);
+if (env.publicOrigin) allowedOrigins.add(new URL(env.publicOrigin).origin);
+if (env.mode !== 'prod') {
+	const vite = new URL(env.viteOrigin);
+	allowedOrigins.add(`http://localhost:${vite.port}`);
+	allowedOrigins.add(`http://127.0.0.1:${vite.port}`);
+}
+const cosmeticLimiter = createRateLimiter(30, 1000);
 const sockets = new Set<ServerWebSocket<SocketData>>();
 /** Cosmetic positions only — answers and progress stay server-authoritative. */
 const ghostPositions = new Map<HouseId, GhostState>();
@@ -76,6 +101,10 @@ function cookieValue(header: string | null, name: string): string | undefined {
 		if (key === name) return rest.join('=');
 	}
 	return undefined;
+}
+
+function floorForCosmetic(floor: number) {
+	return FLOORS.find((item) => item.floor === floor) ?? FLOORS[0];
 }
 
 function send(ws: { send(data: string): void }, message: ServerMessage): void {
@@ -217,6 +246,10 @@ const server = Bun.serve<SocketData>({
 	port,
 	async fetch(request, bunServer) {
 		const url = new URL(request.url);
+		const internalAuthorized = () => isInternalAuthorized(request, env.internalSecret);
+		const unauthorized = () => new Response('Unauthorized', { status: 401 });
+
+		if (url.pathname.startsWith('/internal/') && !internalAuthorized()) return unauthorized();
 
 		if (url.pathname === '/internal/kick' && request.method === 'POST') {
 			const token = url.searchParams.get('token') ?? '';
@@ -227,7 +260,8 @@ const server = Bun.serve<SocketData>({
 		}
 
 		if (url.pathname === '/internal/notice' && request.method === 'POST') {
-			broadcast({ type: 'notice', text: url.searchParams.get('text') ?? '' });
+			const text = (url.searchParams.get('text') ?? '').slice(0, 240);
+			if (text) broadcast({ type: 'notice', text });
 			return new Response(null, { status: 204 });
 		}
 
@@ -250,6 +284,8 @@ const server = Bun.serve<SocketData>({
 			url.pathname.startsWith('/ws/') &&
 			request.headers.get('upgrade')?.toLowerCase() === 'websocket'
 		) {
+			if (!isAllowedOrigin(request.headers.get('origin'), allowedOrigins))
+				return new Response('Forbidden origin', { status: 403 });
 			if (url.pathname === '/ws/spike') {
 				return bunServer.upgrade(request, {
 					data: {
@@ -371,6 +407,10 @@ const server = Bun.serve<SocketData>({
 			}
 		},
 		async message(ws, raw) {
+			if (typeof raw === 'string' && raw.length > MAX_WS_MESSAGE_BYTES) {
+				send(ws, { type: 'error', code: 'MESSAGE_TOO_LARGE', message: 'Message too large' });
+				return;
+			}
 			if (ws.data.path === '/ws/spike') {
 				ws.send(
 					JSON.stringify({
@@ -391,13 +431,26 @@ const server = Bun.serve<SocketData>({
 				return;
 			}
 
+			const key = ws.data.spectatorId ?? ws.data.token ?? ws.data.path;
+			if (
+				(message.type === 'move' ||
+					message.type === 'spectatorMove' ||
+					message.type === 'spectatorVisible' ||
+					message.type === 'spectatorSkin') &&
+				!cosmeticLimiter(key)
+			) {
+				send(ws, { type: 'error', code: 'RATE_LIMITED', message: 'Too many updates' });
+				return;
+			}
+
 			if (ws.data.path === '/ws/spectate') {
 				if (message.type === 'spectatorMove' && ws.data.spectatorId) {
+					const target = floorForCosmetic(message.floor);
 					orbPositions.set(ws.data.spectatorId, {
 						id: ws.data.spectatorId,
 						floor: message.floor,
-						x: message.x,
-						y: message.y,
+						x: clampCosmetic(message.x, target.w * TILE),
+						y: clampCosmetic(message.y, target.h * TILE),
 						visible: ws.data.visible
 					});
 					broadcastOrbs();
@@ -429,11 +482,12 @@ const server = Bun.serve<SocketData>({
 			}
 
 			if (message.type === 'move') {
+				const target = floorForCosmetic(message.floor);
 				ghostPositions.set(ws.data.house, {
 					house: ws.data.house,
 					floor: message.floor,
-					x: message.x,
-					y: message.y
+					x: clampCosmetic(message.x, target.w * TILE),
+					y: clampCosmetic(message.y, target.h * TILE)
 				});
 				broadcast(ghostMessage());
 				return;

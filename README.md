@@ -7,6 +7,7 @@ Design docs are in [`readme/`](readme/):
 - [`DESIGN_EN.md`](readme/DESIGN_EN.md) — English version
 - [`questions.json`](readme/questions.json) — 30 seed questions
 - [`DATABASE.md`](readme/DATABASE.md) — how to read/edit the local JSON store or MongoDB
+- [`DEPLOY.md`](DEPLOY.md) — production setup, reverse proxy, security and backups
 
 ## Requirements
 
@@ -49,7 +50,7 @@ Pages: `/` join + machine password · `/game` fullscreen game · `/scoreboard` �
 4. The join page unlocks **Enter game**. `/game` fills the whole browser; use the **100% / 80%** control to zoom out 20% and see more of the map. Refreshing restores the saved state.
 5. Admin can **Kick** or **Move** a session to another machine. One active client per house.
 6. Disconnecting during a boss fight resets that boss's HP.
-7. The map is ported from the earlier prototype: 40×22-tile white cluster floors with round pizza tables, iMacs, chairs, pillars, stairs, lift and forecourt. Move with **WASD / arrow keys**; press **E** on a glowing plug (or **Q** for stairs down).
+7. The map is ported from the earlier prototype: 40×22-tile white cluster floors with round pizza tables, iMacs, chairs, pillars, stairs, lift and forecourt. Move with **WASD / arrow keys** (**Shift** sprints); a compass arrow and `GO` marker point at the next plug, and press **E** on a glowing plug (or **Q** for stairs down).
 8. Answer in the terminal. Wrong answers lock that house's terminal for 10 seconds.
 9. A correct answer clears the room, awards points with a first/second/third-place bonus, and moves the house to the next room.
 10. Other houses appear as translucent shadows when they are in the same room (fog of war).
@@ -93,5 +94,5 @@ This project therefore uses a custom Bun server (`server.ts`) that:
 - [x] **Phase 2** — quiz rooms, terminals/locks/hints, sprites, fog/shadows, clock, scoring, scoreboard, admin controls
 - [x] **Phase 3** — boss mechanics
 - [x] **Phase 4** — full admin, spectator, Discord, audit log
-- [ ] Phase 5 — pixel-art client and effects
-- [ ] Phase 6 — hardening and deploy docs
+- [x] **Phase 5** — floor progression (5 floors × 6 plugs), boss lifecycle, pixel-art effects (sprint run, plug arrows, fire orb), admin overhaul
+- [x] **Phase 6** — hardening (internal auth, origin checks, rate limits, input bounds) and [deploy docs](DEPLOY.md)

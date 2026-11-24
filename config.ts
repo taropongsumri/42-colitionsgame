@@ -235,6 +235,11 @@ export const env = {
 	dataDir: Bun.env.DATA_DIR ?? './data',
 	adminPassword: Bun.env.ADMIN_PASSWORD ?? 'admin',
 	spectatorKey: Bun.env.SPECTATOR_KEY ?? 'spectate',
+	/** Shared secret for /internal/* control calls. Empty in prod = fail closed. */
+	internalSecret:
+		Bun.env.INTERNAL_SECRET?.trim() || (Bun.env.MODE === 'prod' ? '' : 'dev-internal'),
+	/** External browser origin when deployed behind a TLS reverse proxy. */
+	publicOrigin: Bun.env.PUBLIC_ORIGIN?.trim() || null,
 	discordWebhookUrl: Bun.env.DISCORD_WEBHOOK_URL?.trim() || null
 };
 
