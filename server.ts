@@ -28,6 +28,7 @@ import { interact, submitAnswer } from './src/lib/server/game/play';
 import { getSessionView, markConnected, onDisconnect, SESSION_COOKIE } from './src/lib/server/lobby';
 import { liveConfig } from './src/lib/server/config';
 import {
+	allowedOriginsForRequest,
 	clampCosmetic,
 	createRateLimiter,
 	isAllowedOrigin,
@@ -66,11 +67,8 @@ const allowedOrigins = new Set<string>([
 	`http://127.0.0.1:${port}`
 ]);
 if (env.publicOrigin) allowedOrigins.add(new URL(env.publicOrigin).origin);
-if (env.mode !== 'prod') {
-	const vite = new URL(env.viteOrigin);
-	allowedOrigins.add(`http://localhost:${vite.port}`);
-	allowedOrigins.add(`http://127.0.0.1:${vite.port}`);
-}
+const vitePort = env.mode === 'prod' ? undefined : new URL(env.viteOrigin).port || '80';
+if (vitePort) allowedOrigins.add(new URL(env.viteOrigin).origin);
 const cosmeticLimiter = createRateLimiter(30, 1000);
 const sockets = new Set<ServerWebSocket<SocketData>>();
 /** Cosmetic positions only — answers and progress stay server-authoritative. */
@@ -285,7 +283,8 @@ const server = Bun.serve<SocketData>({
 			url.pathname.startsWith('/ws/') &&
 			request.headers.get('upgrade')?.toLowerCase() === 'websocket'
 		) {
-			if (!isAllowedOrigin(request.headers.get('origin'), allowedOrigins))
+			const requestOrigins = allowedOriginsForRequest(request, allowedOrigins, vitePort);
+			if (!isAllowedOrigin(request.headers.get('origin'), requestOrigins))
 				return new Response('Forbidden origin', { status: 403 });
 			if (url.pathname === '/ws/spike') {
 				return bunServer.upgrade(request, {

@@ -616,6 +616,11 @@
 			<div class="panel">
 				<h2>Loading the backrooms…</h2>
 				<p>Connecting to machine {session?.code ?? '····'}.</p>
+				<p class="socket-status">Socket: {socketStatus}</p>
+				{#if socketStatus.startsWith('closed') || socketStatus === 'error'}
+					<p>The game server refused the connection. Refresh to try again.</p>
+					<button onclick={() => location.reload()}>Retry</button>
+				{/if}
 			</div>
 		</div>
 	{/if}
@@ -830,6 +835,18 @@
 	}
 	.panel h2 { margin: 0 0 1rem; font-size: clamp(1rem, 4vw, 1.25rem); }
 	.panel p { color: #bdb4c2; line-height: 1.5; }
+	.panel .socket-status { color: #f5b301; font-size: 0.75rem; }
+	.panel button {
+		margin-top: 0.75rem;
+		padding: 0.5rem 1rem;
+		background: #f5b301;
+		border: 0;
+		border-radius: 6px;
+		color: #151019;
+		font: inherit;
+		font-weight: 700;
+		cursor: pointer;
+	}
 
 	@media (max-width: 640px) {
 		.hud {

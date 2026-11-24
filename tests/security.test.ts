@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	allowedOriginsForRequest,
 	clampCosmetic,
 	createRateLimiter,
 	isAllowedOrigin,
@@ -30,6 +31,16 @@ describe('WebSocket origin allow-list', () => {
 		expect(isAllowedOrigin('https://evil.example.com', allowed)).toBe(false);
 		expect(isAllowedOrigin('http://localhost:3000.evil.com', allowed)).toBe(false);
 		expect(isAllowedOrigin('not a url', allowed)).toBe(false);
+	});
+
+	test('allows a LAN Vite page to reach the socket on the same hostname', () => {
+		const request = new Request('http://192.168.1.155:3000/ws/play', {
+			headers: { host: '192.168.1.155:3000' }
+		});
+		const requestOrigins = allowedOriginsForRequest(request, allowed, '5173');
+		expect(isAllowedOrigin('http://192.168.1.155:5173', requestOrigins)).toBe(true);
+		expect(isAllowedOrigin('http://192.168.1.155:3000', requestOrigins)).toBe(true);
+		expect(isAllowedOrigin('https://evil.example.com', requestOrigins)).toBe(false);
 	});
 });
 
