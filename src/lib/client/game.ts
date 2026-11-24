@@ -1,5 +1,5 @@
 // Client game loop for the ported prototype map. The player walks the white cluster floors,
-// collects the glowing question plugs, and the other houses appear as translucent ghosts.
+// collects the glowing question plugs, and the other houses appear as full-colour teammates.
 import {
 	FLOORS,
 	TILE,
@@ -77,6 +77,8 @@ export function createGame(options: GameOptions) {
 
 	const playerImage = loadImage(`/sprites/player_${ANIMALS[house]}.png`);
 	const petImage = loadImage(`/sprites/pet_${ANIMALS[house]}.png`);
+	// The old prototype's backroom image, used as the backdrop behind the floor.
+	const backgroundImage = loadImage('/sprites/arena.png');
 	const houseImages = Object.fromEntries(
 		(Object.keys(HOUSES) as HouseId[]).map((id) => [id, loadImage(`/sprites/player_${ANIMALS[id]}.png`)])
 	) as Record<HouseId, HTMLImageElement>;
@@ -95,7 +97,7 @@ export function createGame(options: GameOptions) {
 	let near: Prop | null = null;
 	let paused = false;
 	let running = true;
-	let zoom = 1;
+	let zoom = 0.8;
 	let t = 0;
 	let walkT = 0;
 	let sendT = 0;
@@ -227,13 +229,12 @@ export function createGame(options: GameOptions) {
 
 		if (near?.roomId) {
 			const isCurrent = near.roomId === highlight;
-			emitHud(
-				isCurrent
-					? 'E · Plug in and answer'
-					: solved.has(near.roomId)
-						? 'E · This plug is cleared'
-						: 'E · Check this socket'
-			);
+			const prompt = !isCurrent
+				? 'E · Check this socket'
+				: solved.has(near.roomId)
+					? 'Cleared ✓ · E to view the question'
+					: 'E · Plug in and answer';
+			emitHud(prompt);
 			if (pressed) options.onInteract?.(near.roomId);
 			return;
 		}
@@ -275,12 +276,14 @@ export function createGame(options: GameOptions) {
 		const actors: Actor[] = [];
 		for (const [id, ghost] of ghosts) {
 			if (ghost.floor !== map.floor || now - ghost.seen > 3000) continue;
+			// Full-colour teammate sprites, with a label so each house is easy to spot.
 			actors.push({
 				x: ghost.x,
 				y: ghost.y,
 				img: houseImages[id],
-				ghost: HOUSES[id].color,
-				alpha: 0.5
+				bob: Math.round(Math.sin(t * 5 + id.length)),
+				name: HOUSES[id].name,
+				nameColor: HOUSES[id].color
 			});
 		}
 		actors.push(
@@ -288,7 +291,12 @@ export function createGame(options: GameOptions) {
 			{ x: pos.x, y: pos.y, img: playerImage, bob }
 		);
 
-		renderFloor(ctx, map, cam, view, actors, t, { solved, near: near?.roomId ?? null, highlight });
+		renderFloor(ctx, map, cam, view, actors, t, {
+			solved,
+			near: near?.roomId ?? null,
+			highlight,
+			background: backgroundImage
+		});
 
 		if (fade) {
 			const alpha = fade.t < FADE ? fade.t / FADE : 1 - (fade.t - FADE) / FADE;
@@ -353,10 +361,6 @@ export function createGame(options: GameOptions) {
 		setPaused(next: boolean) {
 			paused = next;
 			if (next) interactQueued = null;
-		},
-		setZoom(next: number) {
-			zoom = next === 0.8 ? 0.8 : 1;
-			resize();
 		},
 		setGhosts(list: Ghost[]) {
 			const now = performance.now();

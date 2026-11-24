@@ -101,7 +101,7 @@
 		</a>
 	</section>
 
-	<p class="hint">The game fills your whole browser. Use the zoom control in-game to see 20% more.</p>
+	<p class="hint">The game fills your whole browser. The in-game view is locked to 80% for everyone.</p>
 </main>
 
 <style>

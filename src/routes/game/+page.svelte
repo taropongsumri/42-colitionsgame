@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { createGame, type Ghost, type Hud } from '$lib/client/game';
+	import Terminal from '$lib/components/game/Terminal.svelte';
 	import { realTableFor } from '$lib/shared/dungeon';
 	import { HOUSES, HOUSE_IDS, type HouseId } from '$lib/shared/types';
 
@@ -35,16 +36,17 @@
 	let scoreboard: Scoreboard | null = null;
 	let terminal: { prompt: string; hint: string | null } | null = null;
 	let hud: Hud = { floor: 1, prompt: null };
-	let answer = '';
 	let feedback = '';
+	let terminalRoomId: string | null = null;
+	let terminalSolved = false;
 	let notice = '';
 	let lockUntil: number | null = null;
 	let now = Date.now();
-	let zoom = 1;
+	/** The game view is locked to 80% so everyone sees the same amount of map. */
+	const zoomPercent = 80;
 
 	$: lockRemaining = lockUntil ? Math.max(0, Math.ceil((lockUntil - now) / 1000)) : 0;
 	$: timeLeft = scoreboard ? formatTime(scoreboard.timeLeftMs) : '--:--';
-	$: zoomPercent = zoom === 0.8 ? 80 : 100;
 
 	function formatTime(ms: number): string {
 		const total = Math.max(0, Math.floor(ms / 1000));
@@ -55,21 +57,18 @@
 		if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
 	}
 
-	function setZoom(value: number) {
-		zoom = value;
-		game?.setZoom(value);
-	}
-
 	function closeTerminal() {
 		terminal = null;
+		terminalRoomId = null;
+		terminalSolved = false;
 		feedback = '';
 		game?.setPaused(false);
 	}
 
-	function submit() {
-		if (!answer.trim() || lockRemaining > 0) return;
-		send({ type: 'answer', roomId: realTableFor(house, state?.room ?? 1), answer });
-		answer = '';
+	function submit(value: string) {
+		const roomId = terminalRoomId ?? realTableFor(house, state?.room ?? 1);
+		if (!value.trim() || lockRemaining > 0 || terminalSolved) return;
+		send({ type: 'answer', roomId, answer: value });
 	}
 
 	onMount(() => {
@@ -135,7 +134,8 @@
 							prompt: String(message.prompt),
 							hint: message.hint ? String(message.hint) : null
 						};
-						answer = '';
+						terminalRoomId = realTableFor(house, Number(message.room ?? state?.room ?? 1));
+						terminalSolved = false;
 						feedback = '';
 						game?.setPaused(true);
 						break;
@@ -146,11 +146,13 @@
 						};
 						lockUntil = result.lockUntil;
 						if (result.correct) {
-							terminal = null;
-							feedback = 'Correct!';
-							game?.setPaused(false);
+							terminalSolved = true;
+							feedback = 'ACCESS GRANTED';
 						} else {
-							feedback = 'Wrong answer — terminal locked.';
+							const seconds = result.lockUntil
+								? Math.max(1, Math.ceil((result.lockUntil - Date.now()) / 1000))
+								: 0;
+							feedback = `ACCESS DENIED · the plug sparks! Locked for ${seconds}s`;
 						}
 						break;
 					}
@@ -204,11 +206,7 @@
 	</div>
 
 	<div class="hud top-right">
-		<div class="zoom">
-			<button type="button" class:active={zoom === 1} onclick={() => setZoom(1)}>100%</button>
-			<button type="button" class:active={zoom === 0.8} onclick={() => setZoom(0.8)}>80%</button>
-			<span class="zoom-label">zoom {zoomPercent}%</span>
-		</div>
+		<div class="zoom-badge">zoom {zoomPercent}%</div>
 		<div class="links"><a href="/scoreboard">Board</a> · <a href="/">Leave</a></div>
 		<div class="socket">WS {socketStatus}</div>
 	</div>
@@ -236,26 +234,17 @@
 		</div>
 	{/if}
 
-	{#if terminal}
-		<div class="overlay">
-			<div class="panel terminal-panel">
-				<p class="tag">TERMINAL · ROOM {state?.room}</p>
-				<h2>{terminal.prompt}</h2>
-				{#if terminal.hint}<p class="hint">Hint: {terminal.hint}</p>{/if}
-				{#if lockRemaining > 0}<p class="locked">Retry in {lockRemaining}s</p>{/if}
-				<form
-					onsubmit={(event) => {
-						event.preventDefault();
-						submit();
-					}}
-				>
-					<input bind:value={answer} placeholder="type your answer" disabled={lockRemaining > 0} />
-					<button type="submit" disabled={lockRemaining > 0}>Send</button>
-				</form>
-				{#if feedback}<p class="feedback">{feedback}</p>{/if}
-				<button type="button" class="close" onclick={closeTerminal}>Close terminal</button>
-			</div>
-		</div>
+	{#if terminal && terminalRoomId}
+		<Terminal
+			roomId={terminalRoomId}
+			prompt={terminal.prompt}
+			hint={terminal.hint}
+			{lockRemaining}
+			{feedback}
+			solved={terminalSolved}
+			onClose={closeTerminal}
+			onSubmit={submit}
+		/>
 	{/if}
 </div>
 
@@ -289,30 +278,45 @@
 		pointer-events: none;
 		text-shadow: 0 1px 2px #000;
 	}
-	.top-left { top: 0.75rem; left: 0.75rem; }
-	.top-right { top: 0.75rem; right: 0.75rem; text-align: right; pointer-events: auto; }
+	.top-left {
+		top: max(0.75rem, env(safe-area-inset-top));
+		left: max(0.75rem, env(safe-area-inset-left));
+		max-width: min(20rem, calc(50vw - 1.1rem));
+	}
+	.top-right {
+		top: max(0.75rem, env(safe-area-inset-top));
+		right: max(0.75rem, env(safe-area-inset-right));
+		max-width: min(14rem, calc(50vw - 1.1rem));
+		text-align: right;
+		pointer-events: auto;
+	}
 	.brand { color: #f5b301; letter-spacing: 0.16em; font-size: 0.6rem; }
 	.house { font-size: 0.9rem; font-weight: 700; margin-top: 0.2rem; }
 	.house span { color: #9f95a6; font-size: 0.7rem; font-weight: 400; }
 	.stats { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.25rem; }
 	.stats .score { color: #6ee7a8; }
 	.stats .clock { color: #ffd166; font-weight: 700; }
-	.players { display: flex; gap: 0.7rem; margin-top: 0.2rem; font-size: 0.65rem; }
-	.zoom { display: flex; align-items: center; gap: 0.25rem; justify-content: flex-end; }
-	.zoom button {
-		background: #241d29;
-		color: #bdb4c2;
-		border: 1px solid #55485d;
-		font: inherit;
-		padding: 0.2rem 0.45rem;
-		cursor: pointer;
+	.players { display: flex; flex-wrap: wrap; gap: 0.7rem; margin-top: 0.2rem; font-size: 0.65rem; }
+	.zoom-badge {
+		display: inline-block;
+		color: #f5b301;
+		border: 1px solid rgba(245, 179, 1, 0.5);
+		padding: 0.1rem 0.45rem;
+		font-weight: 700;
+		white-space: nowrap;
 	}
-	.zoom button.active { background: #f5b301; color: #151019; border-color: #f5b301; font-weight: 700; }
-	.zoom-label { color: #8b8290; margin-left: 0.25rem; }
 	.links { margin-top: 0.35rem; }
 	a { color: #c4b5fd; }
 	.socket { color: #6f6776; font-size: 0.6rem; }
-	.rooms { position: absolute; bottom: 0.75rem; left: 0.75rem; display: flex; gap: 0.25rem; }
+	.rooms {
+		position: absolute;
+		bottom: max(0.75rem, env(safe-area-inset-bottom));
+		left: max(0.75rem, env(safe-area-inset-left));
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+		max-width: calc(100vw - 1.5rem);
+	}
 	.rooms span {
 		display: grid;
 		place-content: center;
@@ -327,25 +331,28 @@
 	.rooms .solved { color: #6ee7a8; border-color: #6ee7a8; }
 	.prompt {
 		position: absolute;
-		bottom: 3.5rem;
+		bottom: calc(3.5rem + env(safe-area-inset-bottom));
 		left: 50%;
 		transform: translateX(-50%);
 		background: rgba(10, 8, 14, 0.85);
 		border: 1px solid #f5b301;
 		padding: 0.45rem 1rem;
-		font-size: 0.75rem;
-		white-space: nowrap;
+		font-size: clamp(0.65rem, 2.2vw, 0.75rem);
+		text-align: center;
+		max-width: calc(100vw - 1.5rem);
 	}
 	.toast {
 		position: absolute;
-		top: 6rem;
+		top: calc(6rem + env(safe-area-inset-top));
 		left: 50%;
 		transform: translateX(-50%);
 		background: #f5b301;
 		color: #151019;
 		padding: 0.5rem 1rem;
 		font-weight: 700;
-		font-size: 0.75rem;
+		font-size: clamp(0.65rem, 2.2vw, 0.75rem);
+		text-align: center;
+		max-width: calc(100vw - 1.5rem);
 	}
 	.overlay {
 		position: absolute;
@@ -364,29 +371,42 @@
 		text-align: center;
 		box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 	}
-	.panel h2 { margin: 0 0 1rem; font-size: 1.25rem; }
+	.panel h2 { margin: 0 0 1rem; font-size: clamp(1rem, 4vw, 1.25rem); }
 	.panel p { color: #bdb4c2; line-height: 1.5; }
-	.tag { color: #f5b301 !important; font-size: 0.65rem; letter-spacing: 0.2em; margin: 0 0 0.5rem !important; }
-	.hint { color: #c4b5fd !important; }
-	.locked { color: #fb7185 !important; font-weight: 700; }
-	.feedback { color: #ffd166 !important; }
-	form { display: flex; gap: 0.5rem; margin: 1.25rem 0 0.5rem; }
-	input {
-		flex: 1;
-		background: #100c15;
-		color: white;
-		border: 1px solid #f5b301;
-		padding: 0.55rem 0.7rem;
-		font: inherit;
+
+	@media (max-width: 640px) {
+		.hud {
+			font-size: 0.62rem;
+			padding: 0.45rem 0.55rem;
+			border-radius: 4px;
+		}
+		.top-left { max-width: min(58vw, 15rem); }
+		.top-right { max-width: min(38vw, 10rem); }
+		.brand { letter-spacing: 0.08em; }
+		.house { font-size: 0.78rem; }
+		.house span { font-size: 0.6rem; }
+		.stats { gap: 0.35rem 0.6rem; }
+		.players { gap: 0.45rem; font-size: 0.58rem; }
+		.zoom-badge { font-size: 0.62rem; padding: 0.1rem 0.35rem; }
+		.socket { display: none; }
+		.rooms span { min-width: 1.25rem; height: 1.25rem; font-size: 0.58rem; }
+		.panel { padding: 1.4rem; }
 	}
-	form button, .close {
-		background: #f5b301;
-		color: #151019;
-		border: 0;
-		padding: 0.55rem 1rem;
-		font: inherit;
-		font-weight: 700;
-		cursor: pointer;
+
+	@media (max-width: 420px) {
+		.top-left { max-width: 56vw; }
+		.top-right { max-width: 40vw; }
+		.players { display: none; }
+		.stats { flex-direction: column; gap: 0.15rem; }
+		.rooms { gap: 0.18rem; }
+		.rooms span { min-width: 1.15rem; height: 1.15rem; }
 	}
-	.close { margin-top: 0.8rem; background: #3a3140; color: white; font-weight: 400; }
+
+	@media (max-height: 520px) {
+		.top-left .brand,
+		.top-left .players,
+		.socket { display: none; }
+		.prompt { bottom: calc(2.25rem + env(safe-area-inset-bottom)); }
+		.toast { top: calc(4.5rem + env(safe-area-inset-top)); }
+	}
 </style>

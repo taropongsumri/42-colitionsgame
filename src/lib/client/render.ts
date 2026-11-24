@@ -15,12 +15,17 @@ export type Actor = {
 	bob?: number;
 	alpha?: number;
 	ghost?: string;
+	/** Optional house label drawn above full-colour actors. */
+	name?: string;
+	nameColor?: string;
 };
 export type RenderState = {
 	solved: Set<string>;
 	near: string | null;
 	/** The question plug for the house's current room; it glows brighter. */
 	highlight: string | null;
+	/** The old prototype's backroom backdrop, drawn behind the white floors. */
+	background?: HTMLImageElement | null;
 };
 
 const C = {
@@ -351,6 +356,7 @@ function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, cam: Camera) {
 		ctx.drawImage(actor.img, Math.round(x - width / 2), y - height + (actor.bob ?? 0));
 	}
 	ctx.restore();
+	if (actor.name) label(ctx, actor.name, x, y - height - 4, actor.nameColor ?? '#ffffff');
 }
 
 export function renderFloor(
@@ -362,8 +368,13 @@ export function renderFloor(
 	t: number,
 	st: RenderState
 ) {
-	ctx.fillStyle = '#9ea2ab';
-	ctx.fillRect(0, 0, view.w, view.h);
+	if (st.background?.complete && st.background.width) {
+		// The 320x180 backroom image from the earlier prototype, stretched to the view.
+		ctx.drawImage(st.background, 0, 0, view.w, view.h);
+	} else {
+		ctx.fillStyle = '#9ea2ab';
+		ctx.fillRect(0, 0, view.w, view.h);
+	}
 	const tx0 = Math.floor(cam.x / TILE) - 1, ty0 = Math.floor(cam.y / TILE) - 1;
 	const tx1 = Math.ceil((cam.x + view.w) / TILE) + 1;
 	const ty1 = Math.ceil((cam.y + view.h + WALL_H) / TILE) + 1;
@@ -377,6 +388,15 @@ export function renderFloor(
 			} else if (!isWall(c)) drawFloorTile(ctx, x, y, tx, ty);
 		}
 	if (map.outdoor) drawBuilding(ctx, { x: Math.round(cam.x), y: Math.round(cam.y) });
+	if (!map.outdoor && st.background?.complete && st.background.width) {
+		// Keep the old backroom image visible through the white floor instead of hiding it
+		// completely behind the opaque prototype tiles.
+		ctx.save();
+		ctx.globalAlpha = 0.14;
+		ctx.globalCompositeOperation = 'multiply';
+		ctx.drawImage(st.background, 0, 0, view.w, view.h);
+		ctx.restore();
+	}
 	for (const prop of map.props)
 		if (prop.kind === 'stairs' || prop.kind === 'elevator' || prop.kind === 'door')
 			drawTransport(ctx, prop, cam, t, map.outdoor);
