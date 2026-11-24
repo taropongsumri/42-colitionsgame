@@ -1,27 +1,16 @@
-import { realTableFor } from '../shared/dungeon';
+// Client game loop for the ported prototype map. The player walks the white cluster floors,
+// collects the glowing question plugs, and the other houses appear as translucent ghosts.
+import {
+	FLOORS,
+	TILE,
+	floorForRoom,
+	questionTableIdForRoom,
+	type FloorMap,
+	type Prop
+} from '../shared/map';
 import { HOUSES, type HouseId } from '../shared/types';
-
-export interface Shadow {
-	house: HouseId;
-	room: number;
-	connected: boolean;
-}
-
-interface Sprite {
-	image: HTMLImageElement;
-	ready: boolean;
-}
-
-const WIDTH = 480;
-const HEIGHT = 270;
-const SCALE = 2;
-
-const TABLES = [
-	{ id: 't0', x: 120, y: 145 },
-	{ id: 't1', x: 360, y: 145 },
-	{ id: 't2', x: 120, y: 220 },
-	{ id: 't3', x: 360, y: 220 }
-];
+import { move, transportAt } from './world';
+import { renderFloor, type Actor, type Viewport } from './render';
 
 const ANIMALS: Record<HouseId, string> = {
 	h1: 'scorpion',
@@ -29,172 +18,178 @@ const ANIMALS: Record<HouseId, string> = {
 	h3: 'octopus'
 };
 
-function loadSprite(path: string): Sprite {
-	const image = new Image();
-	const sprite: Sprite = { image, ready: false };
-	image.onload = () => (sprite.ready = true);
-	image.src = path;
-	return sprite;
+/** The original prototype's camera view, scaled up to fill any browser size. */
+const BASE_W = 320;
+const BASE_H = 180;
+const BACKING_SCALE = 2;
+const SPEED = 72; // world pixels per second
+const PLUG_REACH = 26;
+const FADE = 0.18;
+const PET_LAG = 0.3;
+
+export interface Hud {
+	floor: number;
+	prompt: string | null;
 }
 
-export function createGame(options: {
+export interface Ghost {
+	house: HouseId;
+	floor: number;
+	x: number;
+	y: number;
+}
+
+export type GameOptions = {
 	canvas: HTMLCanvasElement;
 	house: HouseId;
-	onInteract: (tableId: string) => void;
-}) {
-	const { canvas, house, onInteract } = options;
-	const ctx = canvas.getContext('2d');
-	if (!ctx) throw new Error('Canvas 2D unavailable');
+	onInteract?: (tableId: string) => void;
+	onHud?: (hud: Hud) => void;
+	onMove?: (position: { floor: number; x: number; y: number }) => void;
+};
 
-	canvas.width = WIDTH * SCALE;
-	canvas.height = HEIGHT * SCALE;
-	ctx.imageSmoothingEnabled = false;
-	// Draw in logical 480x270 coordinates; the backing store is 2x for crisp pixels.
-	ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+type Target = { floor: number; x: number; y: number };
+type GhostTrack = Ghost & { tx: number; ty: number; seen: number };
 
-	const playerSprite = loadSprite(`/sprites/player_${ANIMALS[house]}.png`);
-	const petSprite = loadSprite(`/sprites/pet_${ANIMALS[house]}.png`);
-	const shadowSprites = new Map<HouseId, Sprite>(
-		(['h1', 'h2', 'h3'] as HouseId[])
-			.filter((id) => id !== house)
-			.map((id) => [id, loadSprite(`/sprites/player_${ANIMALS[id]}.png`)] as const)
-	);
+function loadImage(src: string): HTMLImageElement {
+	const image = new Image();
+	image.src = src;
+	return image;
+}
 
+function floorByNumber(floor: number): FloorMap | undefined {
+	return FLOORS.find((item) => item.floor === floor);
+}
+
+function floorTarget(floor: number, kind: 'spawn' | 'stairs' | 'door' | 'elevator'): Target | null {
+	const map = floorByNumber(floor);
+	if (!map) return null;
+	if (kind === 'spawn') return { floor, x: map.spawn.x, y: map.spawn.y };
+	const prop = map.props.find((item) => item.kind === kind);
+	if (!prop) return { floor, x: map.spawn.x, y: map.spawn.y };
+	return { floor, x: prop.x, y: prop.y + (map.outdoor ? 14 : 5) };
+}
+
+export function createGame(options: GameOptions) {
+	const { canvas, house } = options;
+	const context = canvas.getContext('2d');
+	if (!context) throw new Error('Canvas 2D unavailable');
+	const ctx: CanvasRenderingContext2D = context;
+
+	const playerImage = loadImage(`/sprites/player_${ANIMALS[house]}.png`);
+	const petImage = loadImage(`/sprites/pet_${ANIMALS[house]}.png`);
+	const houseImages = Object.fromEntries(
+		(Object.keys(HOUSES) as HouseId[]).map((id) => [id, loadImage(`/sprites/player_${ANIMALS[id]}.png`)])
+	) as Record<HouseId, HTMLImageElement>;
+
+	let floorIndex = Math.max(0, FLOORS.findIndex((item) => item.floor === 1));
+	let map: FloorMap = FLOORS[floorIndex];
+	const pos = { x: map.spawn.x, y: map.spawn.y };
+	const pet = { x: pos.x - 14, y: pos.y + 2, flip: false };
+	const trail: { t: number; x: number; y: number }[] = [];
 	const keys = new Set<string>();
-	const player = { x: WIDTH / 2, y: 240 };
-	const pet = { x: WIDTH / 2 - 30, y: 246 };
+	const ghosts = new Map<HouseId, GhostTrack>();
+	const solved = new Set<string>();
 
-	let room = 1;
-	let shadows: Shadow[] = [];
+	let currentRoom = 1;
+	let highlight: string | null = questionTableIdForRoom(1);
+	let near: Prop | null = null;
+	let paused = false;
 	let running = true;
-	let frame = 0;
+	let zoom = 1;
+	let t = 0;
+	let walkT = 0;
+	let sendT = 0;
+	let interactQueued: 'e' | 'q' | null = null;
+	let lastHud = '';
+	let fade: { t: number; to: Target; switched: boolean } | null = null;
+	let view: Viewport = { w: BASE_W, h: BASE_H };
+	let scaleX = 1;
+	let scaleY = 1;
 
-	const onKeyDown = (event: KeyboardEvent) => {
-		const key = event.key.toLowerCase();
-		keys.add(key);
-		if (key === 'e' && !event.repeat && nearRealTable()) {
-			onInteract(realTableFor(house, room));
+	function resize() {
+		const rect = canvas.getBoundingClientRect();
+		const cssW = Math.max(1, rect.width || window.innerWidth);
+		const cssH = Math.max(1, rect.height || window.innerHeight);
+		const width = Math.max(1, Math.round(cssW * BACKING_SCALE));
+		const height = Math.max(1, Math.round(cssH * BACKING_SCALE));
+		if (canvas.width !== width || canvas.height !== height) {
+			canvas.width = width;
+			canvas.height = height;
 		}
-	};
-	const onKeyUp = (event: KeyboardEvent) => keys.delete(event.key.toLowerCase());
-
-	window.addEventListener('keydown', onKeyDown);
-	window.addEventListener('keyup', onKeyUp);
-
-	function nearRealTable(): boolean {
-		const table = TABLES.find((item) => item.id === realTableFor(house, room));
-		return !!table && Math.hypot(player.x - table.x, player.y - (table.y + 18)) < 58;
+		const aspect = cssW / cssH;
+		const baseAspect = BASE_W / BASE_H;
+		// Keep the original 16:9 view at 100%. Wider/taller browsers simply see more world.
+		const w = aspect >= baseAspect ? (BASE_H / zoom) * aspect : BASE_W / zoom;
+		const h = aspect >= baseAspect ? BASE_H / zoom : (BASE_W / zoom) / aspect;
+		view = { w, h };
+		scaleX = width / w;
+		scaleY = height / h;
+		ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+		ctx.imageSmoothingEnabled = false;
 	}
 
-	function drawRoom() {
-		ctx!.fillStyle = '#e8e4d8';
-		ctx!.fillRect(0, 0, WIDTH, HEIGHT);
-
-		// back wall
-		ctx!.fillStyle = '#c9c4b6';
-		ctx!.fillRect(0, 0, WIDTH, 110);
-		ctx!.fillStyle = '#b6b1a3';
-		ctx!.fillRect(16, 18, 100, 62);
-		ctx!.fillRect(WIDTH - 116, 18, 100, 62);
-		ctx!.fillStyle = '#e8e4d8';
-		ctx!.fillRect(20, 22, 92, 54);
-		ctx!.fillRect(WIDTH - 112, 22, 92, 54);
-
-		// floor tiles
-		ctx!.strokeStyle = '#cfc9ba';
-		ctx!.lineWidth = 1;
-		for (let x = 0; x <= WIDTH; x += 30) {
-			ctx!.beginPath();
-			ctx!.moveTo(x, 110);
-			ctx!.lineTo(x, HEIGHT);
-			ctx!.stroke();
+	function emitHud(prompt: string | null) {
+		const hud = { floor: map.floor, prompt };
+		const key = JSON.stringify(hud);
+		if (key !== lastHud) {
+			lastHud = key;
+			options.onHud?.(hud);
 		}
-		for (let y = 110; y <= HEIGHT; y += 26) {
-			ctx!.beginPath();
-			ctx!.moveTo(0, y);
-			ctx!.lineTo(WIDTH, y);
-			ctx!.stroke();
-		}
-
-		ctx!.fillStyle = '#7a746b';
-		ctx!.font = '10px monospace';
-		ctx!.fillText(`ROOM ${String(room).padStart(2, '0')} — FOG OF WAR ON`, 12, 128);
 	}
 
-	function drawTables() {
-		const real = realTableFor(house, room);
-		for (const table of TABLES) {
-			const powered = table.id === real;
-			ctx!.fillStyle = '#6f6a60';
-			ctx!.beginPath();
-			ctx!.ellipse(table.x, table.y + 10, 30, 14, 0, 0, Math.PI * 2);
-			ctx!.fill();
+	function switchFloor(target: Target | null) {
+		if (!target || target.floor === map.floor) return;
+		fade = { t: 0, to: target, switched: false };
+	}
 
-			ctx!.fillStyle = powered ? '#b8b2a2' : '#9e988b';
-			ctx!.beginPath();
-			ctx!.ellipse(table.x, table.y, 30, 15, 0, 0, Math.PI * 2);
-			ctx!.fill();
-
-			ctx!.strokeStyle = '#7c766b';
-			ctx!.beginPath();
-			ctx!.moveTo(table.x - 30, table.y);
-			ctx!.lineTo(table.x + 30, table.y);
-			ctx!.moveTo(table.x, table.y - 15);
-			ctx!.lineTo(table.x, table.y + 15);
-			ctx!.stroke();
-
-			ctx!.fillStyle = powered ? '#f5d000' : '#3d3a35';
-			if (powered) {
-				ctx!.shadowColor = '#f5b301';
-				ctx!.shadowBlur = 10 + Math.sin(frame / 8) * 4;
+	function nearestPlug(): Prop | null {
+		let best: Prop | null = null;
+		let bestDistance = PLUG_REACH;
+		for (const prop of map.props) {
+			if (!prop.roomId) continue;
+			const distance = Math.hypot(prop.x - pos.x, (prop.y - pos.y) * 1.4);
+			if (distance < bestDistance) {
+				best = prop;
+				bestDistance = distance;
 			}
-			ctx!.beginPath();
-			ctx!.arc(table.x, table.y, 4, 0, Math.PI * 2);
-			ctx!.fill();
-			ctx!.shadowBlur = 0;
 		}
+		return best;
 	}
 
-	function drawSprite(sprite: Sprite, x: number, y: number, alpha = 1, tint?: string) {
-		if (!sprite.ready) return;
-		ctx!.save();
-		ctx!.globalAlpha = alpha;
-		if (tint) {
-			ctx!.fillStyle = tint;
-			ctx!.fillRect(x - 2, y - sprite.image.height - 2, sprite.image.width + 4, sprite.image.height + 4);
-		}
-		ctx!.drawImage(
-			sprite.image,
-			Math.round(x - sprite.image.width / 2),
-			Math.round(y - sprite.image.height),
-			sprite.image.width,
-			sprite.image.height
-		);
-		ctx!.restore();
-	}
-
-	function drawActors() {
-		for (const shadow of shadows) {
-			if (!shadow.connected || shadow.room !== room || shadow.house === house) continue;
-			const positions = [110, 180, 370];
-			const index = ['h1', 'h2', 'h3'].indexOf(shadow.house);
-			const sprite = shadowSprites.get(shadow.house);
-			if (sprite) drawSprite(sprite, positions[index] ?? 240, 200, 0.35, HOUSES[shadow.house].color);
+	function update(dt: number) {
+		t += dt;
+		const ease = Math.min(1, dt * 12);
+		for (const ghost of ghosts.values()) {
+			ghost.x += (ghost.tx - ghost.x) * ease;
+			ghost.y += (ghost.ty - ghost.y) * ease;
 		}
 
-		drawSprite(petSprite, pet.x, pet.y);
-		drawSprite(playerSprite, player.x, player.y);
-
-		if (nearRealTable()) {
-			ctx!.fillStyle = '#2f2a24';
-			ctx!.font = 'bold 11px monospace';
-			ctx!.fillText('[E] OPEN TERMINAL', player.x - 52, player.y - 92);
+		if (fade) {
+			fade.t += dt;
+			if (!fade.switched && fade.t >= FADE) {
+				const next = floorByNumber(fade.to.floor);
+				if (next) {
+					const index = FLOORS.indexOf(next);
+					if (index >= 0) floorIndex = index;
+					map = next;
+					pos.x = fade.to.x;
+					pos.y = fade.to.y;
+					pet.x = pos.x - 12;
+					pet.y = pos.y + 2;
+					trail.length = 0;
+				}
+				fade.switched = true;
+			}
+			if (fade.t >= FADE * 2) fade = null;
+			interactQueued = null;
+			return;
 		}
-	}
 
-	function loop() {
-		if (!running) return;
-		frame += 1;
+		if (paused) {
+			walkT = 0;
+			interactQueued = null;
+			return;
+		}
 
 		let dx = 0;
 		let dy = 0;
@@ -204,31 +199,188 @@ export function createGame(options: {
 		if (keys.has('s') || keys.has('arrowdown')) dy += 1;
 		if (dx || dy) {
 			const length = Math.hypot(dx, dy);
-			player.x = Math.max(24, Math.min(WIDTH - 24, player.x + (dx / length) * 2));
-			player.y = Math.max(130, Math.min(HEIGHT - 18, player.y + (dy / length) * 2));
-		}
-		pet.x += (player.x - 28 - pet.x) * 0.05;
-		pet.y += (player.y + 4 - pet.y) * 0.05;
+			move(map, pos, (dx / length) * SPEED * dt, (dy / length) * SPEED * dt);
+			walkT += dt;
+		} else walkT = 0;
 
-		drawRoom();
-		drawTables();
-		drawActors();
-		requestAnimationFrame(loop);
+		trail.push({ t, x: pos.x, y: pos.y });
+		while (trail.length > 2 && trail[0].t < t - PET_LAG) trail.shift();
+		const petTarget = trail[0];
+		const petEase = Math.min(1, dt * 8);
+		if (Math.hypot(pos.x - pet.x, pos.y - pet.y) > 14 && petTarget) {
+			const nextX = pet.x + (petTarget.x - pet.x) * petEase;
+			if (Math.abs(nextX - pet.x) > 0.05) pet.flip = nextX > pet.x;
+			pet.x = nextX;
+			pet.y += (petTarget.y + 2 - pet.y) * petEase;
+		}
+
+		sendT += dt;
+		if (sendT >= 0.1) {
+			sendT = 0;
+			options.onMove?.({ floor: map.floor, x: Math.round(pos.x), y: Math.round(pos.y) });
+		}
+
+		const pressed = interactQueued;
+		interactQueued = null;
+		near = nearestPlug();
+		const transport = transportAt(map, pos.x, pos.y);
+
+		if (near?.roomId) {
+			const isCurrent = near.roomId === highlight;
+			emitHud(
+				isCurrent
+					? 'E · Plug in and answer'
+					: solved.has(near.roomId)
+						? 'E · This plug is cleared'
+						: 'E · Check this socket'
+			);
+			if (pressed) options.onInteract?.(near.roomId);
+			return;
+		}
+
+		if (transport?.kind === 'door') {
+			const destination = map.outdoor ? 1 : 0;
+			emitHud(map.outdoor ? 'E · Enter the building' : 'E · Go outside');
+			if (pressed) switchFloor(floorTarget(destination, 'door'));
+			return;
+		}
+
+		if (transport?.kind === 'stairs') {
+			const maxFloor = Math.max(...FLOORS.map((item) => item.floor));
+			const up = map.floor < maxFloor ? floorTarget(map.floor + 1, 'stairs') : null;
+			const down = map.floor > 0 ? floorTarget(map.floor - 1, 'stairs') : null;
+			emitHud(`E · Stairs up${down ? ' · Q · stairs down' : ''}`);
+			if (pressed === 'e' && up) switchFloor(up);
+			else if (pressed === 'q' && down) switchFloor(down);
+			return;
+		}
+
+		if (transport?.kind === 'elevator') {
+			emitHud('Lift reserved for the boss phase');
+			return;
+		}
+
+		emitHud(null);
 	}
 
-	requestAnimationFrame(loop);
+	function render() {
+		const worldWidth = map.w * TILE;
+		const worldHeight = map.h * TILE;
+		const cam = {
+			x: Math.round(Math.max(0, Math.min(Math.max(0, worldWidth - view.w), pos.x - view.w / 2))),
+			y: Math.round(Math.max(0, Math.min(Math.max(0, worldHeight - view.h), pos.y - 16 - view.h / 2)))
+		};
+		const bob = walkT > 0 ? -Math.round(Math.abs(Math.sin(walkT * 12))) : 0;
+		const now = performance.now();
+		const actors: Actor[] = [];
+		for (const [id, ghost] of ghosts) {
+			if (ghost.floor !== map.floor || now - ghost.seen > 3000) continue;
+			actors.push({
+				x: ghost.x,
+				y: ghost.y,
+				img: houseImages[id],
+				ghost: HOUSES[id].color,
+				alpha: 0.5
+			});
+		}
+		actors.push(
+			{ x: pet.x, y: pet.y, img: petImage, flip: pet.flip, bob: Math.round(Math.sin(t * 6)) },
+			{ x: pos.x, y: pos.y, img: playerImage, bob }
+		);
+
+		renderFloor(ctx, map, cam, view, actors, t, { solved, near: near?.roomId ?? null, highlight });
+
+		if (fade) {
+			const alpha = fade.t < FADE ? fade.t / FADE : 1 - (fade.t - FADE) / FADE;
+			ctx.fillStyle = `rgba(0,0,0,${Math.max(0, Math.min(1, alpha))})`;
+			ctx.fillRect(0, 0, view.w, view.h);
+		}
+	}
+
+	const onKeyDown = (event: KeyboardEvent) => {
+		const target = event.target;
+		if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+		const key = event.key.toLowerCase();
+		if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' '].includes(key)) event.preventDefault();
+		keys.add(key);
+		if ((key === 'e' || key === 'q') && !event.repeat) interactQueued = key;
+	};
+	const onKeyUp = (event: KeyboardEvent) => keys.delete(event.key.toLowerCase());
+	const onBlur = () => keys.clear();
+
+	window.addEventListener('keydown', onKeyDown);
+	window.addEventListener('keyup', onKeyUp);
+	window.addEventListener('blur', onBlur);
+	window.addEventListener('resize', resize);
+	const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize);
+	observer?.observe(canvas);
+	resize();
+	emitHud(null);
+
+	let raf = 0;
+	let last = performance.now();
+	const frame = (now: number) => {
+		const dt = Math.min(0.05, (now - last) / 1000);
+		last = now;
+		update(dt);
+		render();
+		raf = requestAnimationFrame(frame);
+	};
+	raf = requestAnimationFrame(frame);
+
+	if (import.meta.env.DEV) Object.assign(window, { __pos: pos });
 
 	return {
-		setRoom(next: number) {
-			room = next;
-		},
-		setShadows(next: Shadow[]) {
-			shadows = next;
-		},
 		destroy() {
 			running = false;
+			cancelAnimationFrame(raf);
+			observer?.disconnect();
 			window.removeEventListener('keydown', onKeyDown);
 			window.removeEventListener('keyup', onKeyUp);
+			window.removeEventListener('blur', onBlur);
+			window.removeEventListener('resize', resize);
+		},
+		setRoom(room: number) {
+			currentRoom = room;
+			highlight = questionTableIdForRoom(room);
+			const targetFloor = floorForRoom(room);
+			if (targetFloor !== map.floor) switchFloor(floorTarget(targetFloor, 'stairs'));
+		},
+		setSolved(ids: Iterable<string>) {
+			solved.clear();
+			for (const id of ids) solved.add(id);
+		},
+		setPaused(next: boolean) {
+			paused = next;
+			if (next) interactQueued = null;
+		},
+		setZoom(next: number) {
+			zoom = next === 0.8 ? 0.8 : 1;
+			resize();
+		},
+		setGhosts(list: Ghost[]) {
+			const now = performance.now();
+			for (const ghost of list) {
+				if (ghost.house === house) continue;
+				const current = ghosts.get(ghost.house);
+				if (
+					!current ||
+					current.floor !== ghost.floor ||
+					Math.hypot(current.tx - ghost.x, current.ty - ghost.y) > 64
+				) {
+					ghosts.set(ghost.house, { ...ghost, tx: ghost.x, ty: ghost.y, seen: now });
+				} else {
+					current.tx = ghost.x;
+					current.ty = ghost.y;
+					current.seen = now;
+				}
+			}
+			for (const id of [...ghosts.keys()]) {
+				if (!list.some((ghost) => ghost.house === id)) ghosts.delete(id);
+			}
+		},
+		get running() {
+			return running;
 		}
 	};
 }

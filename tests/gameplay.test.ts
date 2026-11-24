@@ -13,7 +13,7 @@ const { bonusPercent, roomPoints, clearPlace } = await import('../src/lib/server
 const { startClock, timeLeftMs } = await import('../src/lib/server/game/clock');
 const { control } = await import('../src/lib/server/game/control');
 const { interact, submitAnswer } = await import('../src/lib/server/game/play');
-const { realTableFor, hintTableFor } = await import('../src/lib/shared/dungeon');
+const { realTableFor, hintTableFor, TABLE_IDS } = await import('../src/lib/shared/dungeon');
 
 const questionIds = Array.from({ length: 30 }, (_, index) => `q${String(index + 1).padStart(2, '0')}`);
 const questions = questionIds.map((id, index) => ({
@@ -63,6 +63,9 @@ describe('phase 2 gameplay', () => {
 				expect(tables.real).not.toBe(tables.hint);
 			}
 		}
+		expect(realTableFor('h1', 1)).toBe('f1-r1');
+		expect(realTableFor('h1', 6)).toBe('f2-r1');
+		expect(hintTableFor('h1', 5)).toBe('f1-r1');
 	});
 
 	test('scoring rewards earlier clears', () => {
@@ -99,7 +102,10 @@ describe('phase 2 gameplay', () => {
 		const question = await questionFor('h1', 1);
 		expect(question).not.toBeNull();
 
-		const wrongTable = interact('h1', tablesFor('h1', 1).real === 't0' ? 't1' : 't0');
+		const currentTable = tablesFor('h1', 1).real;
+		const otherTable = TABLE_IDS.find((id) => id !== currentTable)!;
+		expect(currentTable).toBe('f1-r1');
+		const wrongTable = interact('h1', otherTable);
 		expect((await wrongTable).messages[0]).toMatchObject({ type: 'notice' });
 
 		const asked = await interact('h1', tablesFor('h1', 1).real);

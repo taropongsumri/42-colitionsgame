@@ -1,246 +1,174 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { HOUSES, HOUSE_IDS, type HouseId } from '$lib/shared/types';
-	import { createGame, type Shadow } from '$lib/client/game';
+	import { HOUSES, type HouseId } from '$lib/shared/types';
 
-	type Session = { token: string; code: string; house: HouseId | null; accepted: boolean };
-	type HouseState = {
-		id: HouseId;
-		room: number;
-		hp: number;
-		score: number;
-		solvedRooms: number[];
-		answerLockUntil: number | null;
-		status: string;
-	};
-	type Scoreboard = {
-		rows: { house: HouseId; score: number; room: number; hp: number }[];
-		timeLeftMs: number;
-		paused: boolean;
-		announcement: string | null;
+	type Session = {
+		token: string;
+		code: string;
+		house: HouseId | null;
+		accepted: boolean;
 	};
 
 	let session: Session | null = null;
-	let socket: WebSocket | undefined;
-	let game: ReturnType<typeof createGame> | undefined;
-	let canvas: HTMLCanvasElement;
+	let copied = false;
+	let error = '';
 
-	let socketStatus = 'connecting…';
-	let house: HouseId | null = null;
-	let state: HouseState | null = null;
-	let rooms: { number: number; status: string }[] = [];
-	let shadows: Shadow[] = [];
-	let scoreboard: Scoreboard | null = null;
-	let terminal: { prompt: string; hint: string | null } | null = null;
-	let answer = '';
-	let lockUntil: number | null = null;
-	let feedback = '';
-	let now = Date.now();
-	let notice = '';
+	$: house = session?.house ?? null;
+	$: accepted = session?.accepted ?? false;
 
-	$: lockRemaining = lockUntil ? Math.max(0, Math.ceil((lockUntil - now) / 1000)) : 0;
-	$: timeLeft = scoreboard ? formatTime(scoreboard.timeLeftMs) : '--:--';
-
-	function formatTime(ms: number): string {
-		const total = Math.floor(ms / 1000);
-		return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
-	}
-
-	function send(message: unknown) {
-		if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+	async function loadSession(create: boolean) {
+		const response = create
+			? await fetch('/api/session', { method: 'POST' })
+			: await fetch('/api/session');
+		const data = (await response.json()) as { session: Session | null };
+		if (data.session) session = data.session;
+		return data.session;
 	}
 
 	onMount(() => {
-		const timer = setInterval(() => (now = Date.now()), 250);
-
-		const start = async () => {
-			const response = await fetch('/api/session', { method: 'POST' });
-			const data = (await response.json()) as { session: Session };
-			session = data.session;
-			house = session.house;
-
-			if (house) {
-				game = createGame({
-					canvas,
-					house,
-					onInteract: (tableId) => send({ type: 'interact', tableId })
-				});
+		void (async () => {
+			try {
+				const existing = await loadSession(false);
+				if (!existing) await loadSession(true);
+			} catch {
+				error = 'Could not reach the server. Refresh to try again.';
 			}
+		})();
 
-			const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-			const host = import.meta.env.DEV ? `${location.hostname}:3000` : location.host;
-			socket = new WebSocket(`${protocol}//${host}/ws/play`);
-
-			socket.onopen = () => (socketStatus = 'open');
-			socket.onerror = () => (socketStatus = 'error');
-			socket.onclose = (event) => (socketStatus = `closed (${event.code})`);
-			socket.onmessage = (event) => {
-				const message = JSON.parse(String(event.data)) as {
-					type: string;
-					[key: string]: unknown;
-				};
-				switch (message.type) {
-					case 'state':
-						state = message.state as HouseState;
-						lockUntil = state.answerLockUntil;
-						game?.setRoom(state.room);
-						break;
-					case 'dungeon':
-						rooms = message.rooms as typeof rooms;
-						break;
-					case 'shadows':
-						shadows = message.houses as Shadow[];
-						game?.setShadows(shadows);
-						break;
-					case 'scoreboard':
-						scoreboard = message as unknown as Scoreboard;
-						break;
-					case 'question':
-						terminal = {
-							prompt: String(message.prompt),
-							hint: message.hint ? String(message.hint) : null
-						};
-						feedback = '';
-						answer = '';
-						break;
-					case 'answerResult': {
-						const result = message as unknown as { correct: boolean; lockUntil: number | null };
-						lockUntil = result.lockUntil;
-						if (result.correct) {
-							terminal = null;
-							feedback = 'Correct!';
-						} else {
-							feedback = 'Wrong answer — terminal locked.';
-						}
-						break;
-					}
-					case 'notice':
-						notice = String(message.text);
-						setTimeout(() => (notice = ''), 5000);
-						break;
-					case 'error':
-						feedback = String(message.message);
-						break;
-				}
-			};
-		};
-
-		void start();
-		return () => {
-			clearInterval(timer);
-			socket?.close();
-			game?.destroy();
-		};
+		const poll = setInterval(() => {
+			void loadSession(false).catch(() => undefined);
+		}, 1000);
+		return () => clearInterval(poll);
 	});
 
-	function submit() {
-		if (!answer.trim() || lockRemaining > 0) return;
-		send({ type: 'answer', roomId: `r${state?.room ?? 1}`, answer });
-		answer = '';
+	async function copyCode() {
+		if (!session?.code) return;
+		try {
+			await navigator.clipboard.writeText(session.code);
+			copied = true;
+			setTimeout(() => (copied = false), 1800);
+		} catch {
+			error = 'Select and copy the code manually.';
+		}
 	}
 </script>
 
-<svelte:head><title>Coalition Backrooms</title></svelte:head>
+<svelte:head>
+	<title>Join · Coalition Backrooms</title>
+</svelte:head>
 
-<div class="layout">
-	<header>
-		<h1>Coalition Backrooms</h1>
-		<nav><a href="/scoreboard">Scoreboard</a> · <a href="/admin">Admin</a></nav>
-	</header>
+<main>
+	<nav>
+		<span class="brand">COALITION BACKROOMS</span>
+		<span><a href="/scoreboard">Scoreboard</a> · <a href="/admin">Admin</a></span>
+	</nav>
 
-	{#if notice}<div class="toast">{notice}</div>{/if}
+	<section class="card">
+		<p class="eyebrow">PLAYER JOIN</p>
+		<h1>Your machine password</h1>
+		<p class="lead">
+			Show this code to the admin. It is the same 4-character password listed in the
+			<strong>/admin</strong> lobby.
+		</p>
 
-	<div class="stage">
-		<canvas bind:this={canvas} aria-label="Game room"></canvas>
-		{#if !house}
-			<div class="overlay">
-				<h2>Machine {session?.code ?? '····'}</h2>
-				<p>Waiting for admin to assign a house…</p>
-			</div>
-		{/if}
-		{#if terminal && lockRemaining === 0}
-			<div class="overlay terminal">
-				<h2>Terminal — Room {state?.room}</h2>
-				<p>{terminal.prompt}</p>
-				{#if terminal.hint}<p class="hint">Hint: {terminal.hint}</p>{/if}
-				<form onsubmit={(event) => { event.preventDefault(); submit(); }}>
-					<input bind:value={answer} placeholder="type answer" disabled={lockRemaining > 0} />
-					<button type="submit">Send</button>
-				</form>
-				<button class="close" onclick={() => (terminal = null)}>Close</button>
-			</div>
-		{/if}
-	</div>
-
-	<aside>
-		<section>
-			<h2>House</h2>
-			{#if house}
-				<p><strong style:color={HOUSES[house].color}>{HOUSES[house].name}</strong></p>
-			{:else}
-				<p>not assigned</p>
-			{/if}
-			<p>WS: {socketStatus}</p>
-		</section>
-
-		<section>
-			<h2>Progress</h2>
-			<div class="rooms">
-				{#each rooms as room}
-					<span class:open={room.status === 'open'} class:solved={room.status === 'solved'}>
-						{room.number}
-					</span>
-				{/each}
-			</div>
-			<p>Room {state?.room ?? 1} · HP {state?.hp ?? 100} · Score {state?.score ?? 0}</p>
-			{#if lockRemaining > 0}<p class="locked">Terminal locked: {lockRemaining}s</p>{/if}
-			{#if feedback}<p>{feedback}</p>{/if}
-		</section>
-
-		<section>
-			<h2>Time left</h2>
-			<p class="clock">{timeLeft}</p>
-		</section>
-
-		<section>
-			<h2>Players</h2>
-			{#each HOUSE_IDS as id}
-				<p style:color={HOUSES[id].color}>
-					{HOUSES[id].name}: room {shadows.find((s) => s.house === id)?.room ?? 1}
-				</p>
+		<div class="code" aria-label="Machine password">
+			{#each (session?.code ?? '····').split('') as character, index}
+				<span>{character}</span>{#if index === 1}<i></i>{/if}
 			{/each}
-		</section>
-	</aside>
-</div>
+		</div>
+
+		<button class="copy" onclick={copyCode} disabled={!session?.code}>
+			{copied ? 'Copied!' : 'Copy password'}
+		</button>
+
+		<div class="status" class:ready={accepted}>
+			{#if accepted}
+				<p class="ok">Accepted — {house ? HOUSES[house].name : 'house assigned'}</p>
+				<p>You can enter the game now.</p>
+			{:else if house}
+				<p>{HOUSES[house].name} assigned — waiting for the admin to accept.</p>
+			{:else}
+				<p>Waiting for the admin to assign this machine to a house…</p>
+			{/if}
+		</div>
+
+		{#if error}<p class="error">{error}</p>{/if}
+
+		<a class="enter" class:disabled={!accepted} href={accepted ? '/game' : undefined}
+			aria-disabled={!accepted}
+			onclick={(event) => { if (!accepted) event.preventDefault(); }}>
+			Enter game →
+		</a>
+	</section>
+
+	<p class="hint">The game fills your whole browser. Use the zoom control in-game to see 20% more.</p>
+</main>
 
 <style>
 	:global(body) {
-		font-family: ui-monospace, monospace;
-		background: #151019;
+		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+		background: radial-gradient(circle at 50% 0%, #2a2133 0%, #110d15 60%, #0b080e 100%);
 		color: #f4f0f5;
 		margin: 0;
+		min-height: 100vh;
 	}
-	.layout { display: grid; grid-template-columns: 1fr 16rem; gap: 1rem; padding: 1rem; max-width: 80rem; margin: auto; }
-	header { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; }
-	h1 { color: #f5b301; margin: 0; }
+	main { max-width: 42rem; margin: 0 auto; padding: 2rem 1.25rem 3rem; }
+	nav { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 4rem; }
+	.brand { color: #f5b301; letter-spacing: 0.18em; font-size: 0.75rem; }
 	a { color: #c4b5fd; }
-	.stage { position: relative; background: #222; border: 2px solid #3a3140; align-self: start; }
-	canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
-	.overlay { position: absolute; inset: 0; background: rgba(10, 8, 12, 0.86); display: grid; place-content: center; text-align: center; padding: 1rem; }
-	.terminal { background: rgba(10, 8, 12, 0.94); }
-	.terminal input { background: #241d29; color: white; border: 1px solid #f5b301; padding: 0.4rem; }
-	.terminal button, .close { background: #f5b301; border: 0; padding: 0.4rem 0.8rem; cursor: pointer; }
-	.close { margin-top: 0.8rem; background: #3a3140; color: white; }
-	.hint { color: #c4b5fd; }
-	aside section { border: 1px solid #3a3140; padding: 0.7rem; margin-bottom: 0.7rem; }
-	aside h2 { font-size: 0.8rem; color: #f5b301; margin: 0 0 0.4rem; }
-	aside p { margin: 0.2rem 0; }
-	.rooms { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-	.rooms span { border: 1px solid #555; padding: 0.1rem 0.35rem; color: #777; }
-	.rooms .open { color: #f5b301; border-color: #f5b301; }
-	.rooms .solved { color: #6ee7a8; border-color: #6ee7a8; }
-	.locked { color: #fb7185; }
-	.clock { font-size: 1.6rem; }
-	.toast { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); background: #f5b301; color: #151019; padding: 0.5rem 1rem; z-index: 10; }
-	@media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+	.card {
+		background: rgba(30, 23, 35, 0.92);
+		border: 1px solid #4a3d52;
+		border-radius: 14px;
+		padding: 2.5rem 2rem;
+		text-align: center;
+		box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+	}
+	.eyebrow { color: #8b8290; letter-spacing: 0.3em; font-size: 0.7rem; margin: 0 0 0.75rem; }
+	h1 { margin: 0 0 0.75rem; font-size: 1.7rem; color: #fff; }
+	.lead { color: #bdb4c2; line-height: 1.6; margin: 0 auto 1.75rem; max-width: 30rem; }
+	.lead strong { color: #f5b301; }
+	.code { display: flex; justify-content: center; align-items: center; gap: 0.35rem; margin: 1rem 0 1.5rem; }
+	.code span {
+		display: grid;
+		place-content: center;
+		width: 4rem;
+		height: 5rem;
+		background: #151019;
+		border: 1px solid #f5b301;
+		border-radius: 8px;
+		font-size: 2.6rem;
+		font-weight: 700;
+		color: #f5d000;
+		text-shadow: 0 0 16px rgba(245, 179, 1, 0.45);
+	}
+	.code i { width: 0.5rem; height: 1px; background: #6a5e70; }
+	.copy {
+		background: transparent;
+		color: #c4b5fd;
+		border: 1px solid #6d5a78;
+		border-radius: 6px;
+		padding: 0.5rem 1rem;
+		cursor: pointer;
+		font: inherit;
+	}
+	.copy:disabled { opacity: 0.4; cursor: default; }
+	.status { margin: 2rem 0 1rem; color: #9f95a6; font-size: 0.9rem; min-height: 2.8rem; }
+	.status p { margin: 0.2rem 0; }
+	.status .ok { color: #6ee7a8; font-weight: 700; }
+	.status.ready { color: #d8cfdd; }
+	.enter {
+		display: inline-block;
+		background: #f5b301;
+		color: #151019;
+		font-weight: 700;
+		text-decoration: none;
+		padding: 0.85rem 2.5rem;
+		border-radius: 8px;
+		transition: transform 0.15s ease, filter 0.15s ease;
+	}
+	.enter:hover { transform: translateY(-1px); filter: brightness(1.08); }
+	.enter.disabled { background: #3a3140; color: #8b8290; cursor: not-allowed; }
+	.error { color: #fb7185; }
+	.hint { text-align: center; color: #77707d; font-size: 0.75rem; margin-top: 2rem; }
 </style>

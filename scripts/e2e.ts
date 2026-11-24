@@ -92,6 +92,14 @@ socket.send(JSON.stringify({ type: 'ping', sentAt: 12345 }));
 const pong = await waitForMessage('pong', cursor);
 assert(pong.sentAt === 12345, 'ping/pong works');
 
+// 5b. Cosmetic movement is shared as ghost positions (never answers).
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'move', floor: 1, x: 120, y: 240 }));
+const ghostUpdate = await waitForMessage('ghosts', cursor, (m) =>
+	m.houses?.some((ghost: any) => ghost.house === 'h1' && ghost.x === 120 && ghost.y === 240)
+);
+assert(ghostUpdate.houses.some((ghost: any) => ghost.house === 'h1'), 'move broadcasts ghost position');
+
 // 6. Phase 2 quiz flow: interact, wrong answer lock, correct answer, scoreboard.
 const { getStore } = await import('../src/lib/server/db');
 const { questionFor } = await import('../src/lib/server/game/dungeon');
@@ -110,6 +118,8 @@ await store.saveHouse(house!);
 
 const question = await questionFor('h1', 1);
 assert(question !== null, 'question available for h1 room 1');
+assert(realTableFor('h1', 1) === 'f1-r1', 'room 1 uses the ported map table f1-r1');
+assert(realTableFor('h1', 6) === 'f2-r1', 'room 6 uses floor 2 table f2-r1');
 
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'interact', tableId: realTableFor('h1', 1) }));

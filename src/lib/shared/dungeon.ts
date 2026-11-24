@@ -1,14 +1,21 @@
+import { hintTableIdForRoom, questionTableIdForRoom, QUESTIONS_PER_FLOOR, FLOORS } from './map';
 import type { HouseId } from './types';
 
-const HOUSE_ORDER: Record<HouseId, number> = { h1: 0, h2: 1, h3: 2 };
-
-/** The powered table in a room. The socket visibly glows so players can find it. */
-export function realTableFor(house: HouseId, room: number): string {
-	return `t${(room + HOUSE_ORDER[house]) % 4}`;
+/**
+ * The powered question plug for a room. All houses share the same map (as in the
+ * original design); each house receives a different question for that room.
+ */
+export function realTableFor(_house: HouseId, room: number): string {
+	return questionTableIdForRoom(room);
 }
 
-export function hintTableFor(house: HouseId, room: number): string {
-	return `t${((room + HOUSE_ORDER[house]) % 4 + 2) % 4}`;
+/** A different plug on the same floor can reveal the hint. */
+export function hintTableFor(_house: HouseId, room: number): string {
+	return hintTableIdForRoom(room);
 }
 
-export const TABLE_IDS = ['t0', 't1', 't2', 't3'] as const;
+export const TABLE_IDS: readonly string[] = FLOORS.flatMap((floor) =>
+	floor.props.filter((prop) => prop.roomId).map((prop) => prop.roomId as string)
+);
+
+export { QUESTIONS_PER_FLOOR };

@@ -6,6 +6,7 @@ Design docs are in [`readme/`](readme/):
 - [`DESIGN.md`](readme/DESIGN.md) — original Thai design notes
 - [`DESIGN_EN.md`](readme/DESIGN_EN.md) — English version
 - [`questions.json`](readme/questions.json) — 30 seed questions
+- [`DATABASE.md`](readme/DATABASE.md) — how to read/edit the local JSON store or MongoDB
 
 ## Requirements
 
@@ -29,7 +30,7 @@ bun run dev
 - Vite: `http://localhost:5173` — the app, with HMR
 - Bun socket server: `http://localhost:3000` — `/ws/*` plus an HTTP proxy to Vite
 
-Open `http://localhost:5173`.
+Open `http://localhost:5173` — that is the **join page**. After the admin accepts your machine code, click **Enter game** to open `/game`.
 
 ### Production-style (one process)
 ```bash
@@ -38,15 +39,17 @@ bun run start
 ```
 Open `http://localhost:3000`. HTTP and WebSocket share the same port.
 
+Pages: `/` join + machine password · `/game` fullscreen game · `/scoreboard` · `/admin`.
+
 ## Game flow implemented so far
 
-1. Open the game → a 4-character machine code appears.
+1. Open `/` → a 4-character machine code appears. This is the same "password" shown in `/admin`.
 2. Open `/admin`, enter the admin password (default `admin` from `.env`).
 3. Assign the machine to `h1`, `h2`, or `h3`, then click **Accept**.
-4. The game page now shows the house and saved state. Refreshing restores it.
+4. The join page unlocks **Enter game**. `/game` fills the whole browser; use the **100% / 80%** control to zoom out 20% and see more of the map. Refreshing restores the saved state.
 5. Admin can **Kick** or **Move** a session to another machine. One active client per house.
 6. Disconnecting during a boss fight resets that boss's HP.
-7. Move with **WASD / arrow keys**. The powered table glows; stand near it and press **E**.
+7. The map is ported from the earlier prototype: 40×22-tile white cluster floors with round pizza tables, iMacs, chairs, pillars, stairs, lift and forecourt. Move with **WASD / arrow keys**; press **E** on a glowing plug (or **Q** for stairs down).
 8. Answer in the terminal. Wrong answers lock that house's terminal for 10 seconds.
 9. A correct answer clears the room, awards points with a first/second/third-place bonus, and moves the house to the next room.
 10. Other houses appear as translucent shadows when they are in the same room (fog of war).
@@ -59,7 +62,7 @@ Open `http://localhost:3000`. HTTP and WebSocket share the same port.
 | Local (default) | `MONGO_URI=` | `./data/store.json` |
 | MongoDB | `MONGO_URI=mongodb://...` | `coalition_content`, `coalition_config`, `coalition_game`, `coalition_logs` |
 
-The local store is reloaded from disk on every operation so the dev web process and socket process see the same state.
+The local store is reloaded from disk on every operation so the dev web process and socket process see the same state. See [`readme/DATABASE.md`](readme/DATABASE.md) for `jq` / `mongosh` commands and collection names.
 
 ## Other commands
 

@@ -8,6 +8,12 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('ping'), sentAt: z.number() }),
 	z.object({ type: z.literal('claimMachine'), code: z.string().length(4) }),
 	z.object({ type: z.literal('interact'), tableId: z.string().max(64) }),
+	z.object({
+		type: z.literal('move'),
+		floor: z.number().int().min(0).max(5),
+		x: z.number().finite(),
+		y: z.number().finite()
+	}),
 	z.object({ type: z.literal('answer'), roomId: z.string().max(64), answer: z.string().max(500) }),
 	z.object({ type: z.literal('enterBoss'), bossId: z.string().max(64) }),
 	z.object({ type: z.literal('typing'), word: z.string().max(64) }),
@@ -41,6 +47,17 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		type: z.literal('shadows'),
 		houses: z.array(
 			z.object({ house: houseIdSchema, room: z.number(), connected: z.boolean() })
+		)
+	}),
+	z.object({
+		type: z.literal('ghosts'),
+		houses: z.array(
+			z.object({
+				house: houseIdSchema,
+				floor: z.number(),
+				x: z.number(),
+				y: z.number()
+			})
 		)
 	}),
 	z.object({

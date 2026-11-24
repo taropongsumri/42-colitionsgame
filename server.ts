@@ -16,6 +16,8 @@ type SocketData = {
 	accepted: boolean;
 };
 
+type GhostState = { house: HouseId; floor: number; x: number; y: number };
+
 type AppFetch = (
 	request: Request,
 	server: Bun.Server<SocketData>
@@ -23,6 +25,8 @@ type AppFetch = (
 
 const port = env.port;
 const sockets = new Set<ServerWebSocket<SocketData>>();
+/** Cosmetic positions only — answers and progress stay server-authoritative. */
+const ghostPositions = new Map<HouseId, GhostState>();
 
 let appFetch: AppFetch;
 if (env.mode === 'prod') {
@@ -55,6 +59,10 @@ function broadcast(message: ServerMessage): void {
 	for (const ws of sockets) {
 		if (ws.data.path !== '/ws/spike') send(ws, message);
 	}
+}
+
+function ghostMessage(): ServerMessage {
+	return { type: 'ghosts', houses: [...ghostPositions.values()] };
 }
 
 async function shadows(): Promise<ServerMessage> {
@@ -156,6 +164,7 @@ const server = Bun.serve<SocketData>({
 				house: ws.data.house,
 				accepted: ws.data.accepted
 			});
+			send(ws, ghostMessage());
 
 			if (ws.data.house) {
 				const store = await getStore();
@@ -198,6 +207,17 @@ const server = Bun.serve<SocketData>({
 				return;
 			}
 
+			if (message.type === 'move') {
+				ghostPositions.set(ws.data.house, {
+					house: ws.data.house,
+					floor: message.floor,
+					x: message.x,
+					y: message.y
+				});
+				broadcast(ghostMessage());
+				return;
+			}
+
 			if (message.type === 'interact') {
 				const result = await interact(ws.data.house, message.tableId);
 				for (const outgoing of result.messages) send(ws, outgoing);
@@ -229,6 +249,10 @@ const server = Bun.serve<SocketData>({
 		async close(ws) {
 			sockets.delete(ws);
 			if (ws.data.path !== '/ws/spike' && ws.data.code) {
+				if (ws.data.house) {
+					ghostPositions.delete(ws.data.house);
+					broadcast(ghostMessage());
+				}
 				await onDisconnect(ws.data.code);
 				broadcast(await shadows());
 				broadcast(await scoreboard());
