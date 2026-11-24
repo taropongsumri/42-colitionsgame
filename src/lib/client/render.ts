@@ -19,6 +19,8 @@ export type Actor = {
 	orb?: string;
 	/** Fire/water cosmetic skin chosen by the spectator. */
 	skin?: 'fire' | 'water';
+	/** Pixel-art fire orb sprite; drawn crisp instead of the vector fallback. */
+	orbSprite?: HTMLImageElement | null;
 	/** Optional house label drawn above full-colour actors. */
 	name?: string;
 	nameColor?: string;
@@ -445,19 +447,30 @@ function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, cam: Camera, t: 
 		ctx.shadowBlur = 14;
 		if (actor.skin === 'fire') {
 			ctx.shadowColor = '#ff7a18';
-			ctx.fillStyle = '#ff3b0d';
-			ctx.beginPath();
-			ctx.moveTo(x, cy - 9);
-			ctx.quadraticCurveTo(x + 7, cy - 1, x + 4, cy + 6);
-			ctx.quadraticCurveTo(x, cy + 10, x - 4, cy + 6);
-			ctx.quadraticCurveTo(x - 7, cy - 1, x, cy - 9);
-			ctx.fill();
-			ctx.fillStyle = '#ffd166';
-			ctx.beginPath();
-			ctx.moveTo(x, cy - 3);
-			ctx.quadraticCurveTo(x + 3, cy + 2, x, cy + 6);
-			ctx.quadraticCurveTo(x - 3, cy + 2, x, cy - 3);
-			ctx.fill();
+			if (actor.orbSprite?.complete && actor.orbSprite.width) {
+				// Nearest-neighbour draw keeps every pixel crisp at the 80% zoom.
+				ctx.imageSmoothingEnabled = false;
+				ctx.drawImage(
+					actor.orbSprite,
+					Math.round(x - actor.orbSprite.width / 2),
+					Math.round(cy - actor.orbSprite.height / 2)
+				);
+			} else {
+				// Fallback until the sprite loads: the original vector flame.
+				ctx.fillStyle = '#ff3b0d';
+				ctx.beginPath();
+				ctx.moveTo(x, cy - 9);
+				ctx.quadraticCurveTo(x + 7, cy - 1, x + 4, cy + 6);
+				ctx.quadraticCurveTo(x, cy + 10, x - 4, cy + 6);
+				ctx.quadraticCurveTo(x - 7, cy - 1, x, cy - 9);
+				ctx.fill();
+				ctx.fillStyle = '#ffd166';
+				ctx.beginPath();
+				ctx.moveTo(x, cy - 3);
+				ctx.quadraticCurveTo(x + 3, cy + 2, x, cy + 6);
+				ctx.quadraticCurveTo(x - 3, cy + 2, x, cy - 3);
+				ctx.fill();
+			}
 		} else if (actor.skin === 'water') {
 			ctx.shadowColor = '#3ab4ff';
 			ctx.fillStyle = '#1d7fe0';

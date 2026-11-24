@@ -34,6 +34,8 @@ export function createSpectator(options: SpectatorOptions) {
 	const ctx: CanvasRenderingContext2D = context;
 	const background = new Image();
 	background.src = '/sprites/arena.png';
+	const fireOrb = new Image();
+	fireOrb.src = '/sprites/fire_orb.png';
 
 	const keys = new Set<string>();
 	const orbs = new Map<string, SpectatorOrb>();
@@ -143,6 +145,7 @@ export function createSpectator(options: SpectatorOptions) {
 				img: null,
 				orb: orb.skin ? (orb.skin === 'fire' ? '#ff7a18' : '#3ab4ff') : colorFor(orb.id),
 				skin: orb.skin,
+				orbSprite: fireOrb,
 				bob: Math.sin(t * 3 + orb.x) * 3
 			});
 		}
@@ -152,6 +155,7 @@ export function createSpectator(options: SpectatorOptions) {
 			img: null,
 			orb: skin === 'fire' ? '#ff7a18' : '#3ab4ff',
 			skin,
+			orbSprite: fireOrb,
 			bob: Math.sin(t * 4) * 2
 		});
 		renderFloor(ctx, map, cam, view, actors, t, {
