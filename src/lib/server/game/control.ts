@@ -1,4 +1,5 @@
 import type { HouseId } from '../../shared/types';
+import { audit } from '../audit';
 import { getStore } from '../db';
 import { startClock, timeLeftMs } from './clock';
 import { liveConfig } from '../config';
@@ -13,12 +14,14 @@ export interface ControlInput {
 		| 'forceUnlock'
 		| 'forceBoss'
 		| 'announce'
+		| 'hideOrbs'
 		| 'end';
 	house?: HouseId;
 	amount?: number;
 	minutes?: number;
 	reason?: string;
 	text?: string;
+	hidden?: boolean;
 }
 
 export async function control(input: ControlInput): Promise<{ notice?: string }> {
@@ -59,8 +62,7 @@ export async function control(input: ControlInput): Promise<{ notice?: string }>
 			house.score += Number(input.amount ?? 0);
 			house.adjustmentCount += 1;
 			await store.saveHouse(house);
-			await store.appendLog({
-				at: Date.now(),
+			await audit({
 				type: 'admin.score',
 				house: house.id,
 				message: `Score ${input.amount} (${input.reason ?? 'no reason'})`
@@ -75,8 +77,7 @@ export async function control(input: ControlInput): Promise<{ notice?: string }>
 			house.room += 1;
 			house.status = 'open';
 			await store.saveHouse(house);
-			await store.appendLog({
-				at: Date.now(),
+			await audit({
 				type: 'admin.unlock',
 				house: house.id,
 				message: `Room ${house.room - 1} force-unlocked`
@@ -92,8 +93,7 @@ export async function control(input: ControlInput): Promise<{ notice?: string }>
 			house.room = game.roomCount + 1;
 			house.status = 'solved';
 			await store.saveHouse(house);
-			await store.appendLog({
-				at: Date.now(),
+			await audit({
 				type: 'admin.bossUnlock',
 				house: house.id,
 				message: 'Lift unlocked by admin'
@@ -102,6 +102,10 @@ export async function control(input: ControlInput): Promise<{ notice?: string }>
 		}
 		case 'announce': {
 			meta.announcement = input.text ?? '';
+			break;
+		}
+		case 'hideOrbs': {
+			meta.orbsHidden = input.hidden === true;
 			break;
 		}
 		case 'end': {
@@ -113,11 +117,9 @@ export async function control(input: ControlInput): Promise<{ notice?: string }>
 	}
 
 	await store.saveMeta(meta);
-	await store.appendLog({
-		at: Date.now(),
-		type: 'admin.control',
-		message: input.action
-	});
+	const discordEvent =
+		input.action === 'start' ? 'game.start' : input.action === 'end' ? 'game.end' : 'admin.action';
+	await audit({ type: 'admin.control', message: input.action }, discordEvent, { text: input.action });
 
 	return input.action === 'announce' ? { notice: meta.announcement ?? '' } : {};
 }

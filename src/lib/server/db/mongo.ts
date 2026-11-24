@@ -103,6 +103,7 @@ export class MongoStore implements Store {
 			remainingMs: 0,
 			announcement: null,
 			finished: false,
+			orbsHidden: false,
 			...(doc ? this.strip<Partial<GameMeta>>(doc) : {})
 		};
 	}

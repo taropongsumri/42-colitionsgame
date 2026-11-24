@@ -23,7 +23,15 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
 	z.object({ type: z.literal('bossMode'), mode: z.enum(['typing', 'attack']) }),
 	z.object({ type: z.literal('bossSwap') }),
 	/** Spend shield for an immediate, server-validated hit on the boss. */
-	z.object({ type: z.literal('bossAttack') })
+	z.object({ type: z.literal('bossAttack') }),
+	// Spectators are read-only: they may move their orb and toggle visibility only.
+	z.object({
+		type: z.literal('spectatorMove'),
+		floor: z.number().int().min(0).max(5),
+		x: z.number().finite(),
+		y: z.number().finite()
+	}),
+	z.object({ type: z.literal('spectatorVisible'), visible: z.boolean() })
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
@@ -201,6 +209,25 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		announcement: z.string().nullable()
 	}),
 	z.object({ type: z.literal('notice'), text: z.string() }),
+	z.object({
+		type: z.literal('spectator.welcome'),
+		id: z.string(),
+		visible: z.boolean(),
+		orbsHidden: z.boolean()
+	}),
+	z.object({
+		type: z.literal('orbs'),
+		orbs: z.array(
+			z.object({
+				id: z.string(),
+				floor: z.number(),
+				x: z.number(),
+				y: z.number(),
+				visible: z.boolean()
+			})
+		)
+	}),
+	z.object({ type: z.literal('orbsHidden'), hidden: z.boolean() }),
 	z.object({ type: z.literal('error'), code: z.string(), message: z.string() })
 ]);
 

@@ -104,6 +104,7 @@ export interface GameMeta {
 	remainingMs: number;
 	announcement: string | null;
 	finished: boolean;
+	orbsHidden: boolean;
 }
 
 export interface ConfigRevision {

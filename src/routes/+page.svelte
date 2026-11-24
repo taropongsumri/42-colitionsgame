@@ -60,7 +60,7 @@
 <main>
 	<nav>
 		<span class="brand">COALITION BACKROOMS</span>
-		<span><a href="/scoreboard">Scoreboard</a> · <a href="/admin">Admin</a></span>
+		<span><a href="/scoreboard">Scoreboard</a> · <a href="/spectate">Spectator</a> · <a href="/admin">Admin</a></span>
 	</nav>
 
 	<section class="card">

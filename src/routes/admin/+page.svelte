@@ -10,6 +10,22 @@
 		lastSeen: number | null;
 	};
 	type House = { id: HouseId; room: number; hp: number; score: number; connected: boolean };
+	type LogEntry = {
+		at: number;
+		type: string;
+		house?: HouseId;
+		message: string;
+		data?: Record<string, unknown>;
+	};
+	type ConfigRevision = { at: number; by: string; value: Record<string, unknown> };
+	type Question = {
+		id: string;
+		question: string;
+		answer: string;
+		acceptedAnswers: readonly string[];
+		hint?: string;
+		category: string;
+	};
 	type BossEntry = {
 		raw: Record<string, unknown>;
 		id: string;
@@ -50,6 +66,12 @@
 	let minutes = 5;
 	let announcement = '';
 	let bosses: BossEntry[] = [];
+	let orbsHidden = false;
+	let logs: LogEntry[] = [];
+	let configHistory: ConfigRevision[] = [];
+	let logType = '';
+	let questionsText = '';
+	let discord: { configured: boolean; maxPerMinute: number } | null = null;
 
 	const headers = () => ({ 'x-admin-password': password, 'content-type': 'application/json' });
 
@@ -117,9 +139,14 @@
 			message = 'Access denied';
 			return;
 		}
-		const data = (await response.json()) as { machines: Machine[]; houses: House[] };
+		const data = (await response.json()) as {
+			machines: Machine[];
+			houses: House[];
+			meta?: { orbsHidden?: boolean };
+		};
 		machines = data.machines;
 		houses = data.houses;
+		orbsHidden = data.meta?.orbsHidden === true;
 		message = '';
 	}
 
@@ -206,6 +233,56 @@
 		message = 'config reset to defaults';
 	}
 
+	async function loadLogs() {
+		const response = await fetch(`/api/admin/logs?limit=100&type=${encodeURIComponent(logType)}`, {
+			headers: headers()
+		});
+		if (!response.ok) return;
+		const data = (await response.json()) as { logs: LogEntry[]; configHistory: ConfigRevision[] };
+		logs = data.logs;
+		configHistory = data.configHistory;
+	}
+
+	async function loadQuestions() {
+		const response = await fetch('/api/admin/questions', { headers: headers() });
+		if (!response.ok) return;
+		const data = (await response.json()) as { questions: Question[] };
+		questionsText = JSON.stringify(data.questions, null, 2);
+	}
+
+	async function saveQuestions() {
+		const questions = JSON.parse(questionsText) as Question[];
+		const response = await fetch('/api/admin/questions', {
+			method: 'PUT',
+			headers: headers(),
+			body: JSON.stringify({ questions })
+		});
+		const data = (await response.json()) as { error?: string; count?: number };
+		message = data.error ?? `${data.count} questions saved`;
+		await loadLogs();
+	}
+
+	async function loadDiscord() {
+		const response = await fetch('/api/admin/discord', { headers: headers() });
+		if (!response.ok) return;
+		discord = (await response.json()) as typeof discord;
+	}
+
+	async function testDiscord() {
+		const response = await fetch('/api/admin/discord', {
+			method: 'POST',
+			headers: headers(),
+			body: JSON.stringify({ test: true })
+		});
+		const data = (await response.json()) as { ok: boolean; reason?: string; status?: number };
+		message = data.ok ? 'Discord test sent' : `Discord test failed: ${data.reason ?? data.status}`;
+	}
+
+	async function toggleOrbs() {
+		await control('hideOrbs', { hidden: !orbsHidden });
+		orbsHidden = !orbsHidden;
+	}
+
 	async function control(action: string, payload: Record<string, unknown> = {}) {
 		const response = await fetch('/api/admin/control', {
 			method: 'POST',
@@ -218,17 +295,21 @@
 	}
 
 	onMount(() => {
+		if (!password) return;
 		void load();
 		void loadConfig();
+		void loadLogs();
+		void loadQuestions();
+		void loadDiscord();
 	});
 </script>
 
 <h1>Admin — Lobby</h1>
-<p><a href="/">Back to game</a> · <a href="/scoreboard">Scoreboard</a></p>
+<p><a href="/">Back to game</a> · <a href="/scoreboard">Scoreboard</a> · <a href="/spectate">Spectator</a></p>
 
 <label>
 	Password
-	<input type="password" bind:value={password} onchange={() => { void load(); void loadConfig(); }} />
+	<input type="password" bind:value={password} onchange={() => { void load(); void loadConfig(); void loadLogs(); void loadQuestions(); void loadDiscord(); }} />
 </label>
 
 {#if message}<p class="message">{message}</p>{/if}
@@ -305,6 +386,10 @@
 		<input bind:value={announcement} placeholder="message to all players" />
 		<button onclick={() => control('announce', { text: announcement })}>Announce</button>
 	</div>
+	<div class="controls">
+		<button onclick={toggleOrbs}>{orbsHidden ? 'Show spectator orbs' : 'Hide spectator orbs'}</button>
+		<span>{orbsHidden ? 'Orbs are hidden from players' : 'Orbs are visible to players'}</span>
+	</div>
 </section>
 
 <section>
@@ -358,6 +443,55 @@
 		<button onclick={saveConfig}>Save</button>
 		<button onclick={resetConfig}>Reset to defaults</button>
 	</div>
+</section>
+
+<section>
+	<h2>Question bank</h2>
+	<p>Answers stay on the server. Question IDs map to the glowing plugs on each floor.</p>
+	<textarea bind:value={questionsText} rows="12"></textarea>
+	<div>
+		<button onclick={loadQuestions}>Reload</button>
+		<button onclick={saveQuestions}>Save questions</button>
+	</div>
+</section>
+
+<section>
+	<h2>Discord</h2>
+	<p>
+		{#if discord}
+			{discord.configured ? `Webhook configured · max ${discord.maxPerMinute} messages/minute` : 'No webhook configured (set DISCORD_WEBHOOK_URL)'}
+		{:else}
+			Loading…
+		{/if}
+	</p>
+	<button onclick={testDiscord}>Send test notification</button>
+</section>
+
+<section>
+	<h2>Audit log</h2>
+	<div class="controls">
+		<input bind:value={logType} placeholder="filter by type, e.g. boss.win" />
+		<button onclick={loadLogs}>Refresh</button>
+	</div>
+	<table>
+		<thead><tr><th>Time</th><th>Type</th><th>House</th><th>Event</th></tr></thead>
+		<tbody>
+			{#each logs as entry}
+				<tr>
+					<td>{new Date(entry.at).toLocaleTimeString()}</td>
+					<td>{entry.type}</td>
+					<td>{entry.house ?? '—'}</td>
+					<td>{entry.message}</td>
+				</tr>
+			{/each}
+		</tbody>
+	</table>
+	<h3>Config history</h3>
+	<ul>
+		{#each configHistory as revision}
+			<li>{new Date(revision.at).toLocaleString()} · {revision.by}</li>
+		{/each}
+	</ul>
 </section>
 
 <style>

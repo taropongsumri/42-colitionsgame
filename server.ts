@@ -33,9 +33,12 @@ type SocketData = {
 	code: string | null;
 	house: HouseId | null;
 	accepted: boolean;
+	spectatorId: string | null;
+	visible: boolean;
 };
 
 type GhostState = { house: HouseId; floor: number; x: number; y: number };
+type OrbState = { id: string; floor: number; x: number; y: number; visible: boolean };
 
 type AppFetch = (
 	request: Request,
@@ -46,6 +49,8 @@ const port = env.port;
 const sockets = new Set<ServerWebSocket<SocketData>>();
 /** Cosmetic positions only — answers and progress stay server-authoritative. */
 const ghostPositions = new Map<HouseId, GhostState>();
+/** Spectator orbs are cosmetic and pass through walls; no answers or progress. */
+const orbPositions = new Map<string, OrbState>();
 
 let appFetch: AppFetch;
 if (env.mode === 'prod') {
@@ -92,6 +97,14 @@ async function sendScoreboard(): Promise<void> {
 
 function ghostMessage(): ServerMessage {
 	return { type: 'ghosts', houses: [...ghostPositions.values()] };
+}
+
+function orbMessage(): ServerMessage {
+	return { type: 'orbs', orbs: [...orbPositions.values()] };
+}
+
+function broadcastOrbs(): void {
+	broadcast(orbMessage());
 }
 
 async function shadows(): Promise<ServerMessage> {
@@ -193,13 +206,52 @@ const server = Bun.serve<SocketData>({
 			return new Response(null, { status: 204 });
 		}
 
+		if (url.pathname === '/internal/orbs-hidden' && request.method === 'POST') {
+			broadcast({ type: 'orbsHidden', hidden: url.searchParams.get('hidden') === 'true' });
+			return new Response(null, { status: 204 });
+		}
+
+		if (url.pathname === '/internal/refresh' && request.method === 'POST') {
+			broadcast(ghostMessage());
+			broadcast(await shadows());
+			broadcast(await scoreboard());
+			return new Response(null, { status: 204 });
+		}
+
 		if (
 			url.pathname.startsWith('/ws/') &&
 			request.headers.get('upgrade')?.toLowerCase() === 'websocket'
 		) {
 			if (url.pathname === '/ws/spike') {
 				return bunServer.upgrade(request, {
-					data: { path: url.pathname, token: null, code: null, house: null, accepted: false }
+					data: {
+						path: url.pathname,
+						token: null,
+						code: null,
+						house: null,
+						accepted: false,
+						spectatorId: null,
+						visible: false
+					}
+				})
+					? undefined
+					: new Response('Upgrade failed', { status: 400 });
+			}
+
+			if (url.pathname === '/ws/spectate') {
+				const key = url.searchParams.get('key') ?? '';
+				if (key !== env.spectatorKey) return new Response('Unauthorized', { status: 401 });
+				const id = crypto.randomUUID().slice(0, 8);
+				return bunServer.upgrade(request, {
+					data: {
+						path: url.pathname,
+						token: null,
+						code: null,
+						house: null,
+						accepted: true,
+						spectatorId: id,
+						visible: true
+					}
 				})
 					? undefined
 					: new Response('Upgrade failed', { status: 400 });
@@ -215,7 +267,9 @@ const server = Bun.serve<SocketData>({
 					token: view.token,
 					code: view.code,
 					house: view.house,
-					accepted: view.accepted
+					accepted: view.accepted,
+					spectatorId: null,
+					visible: false
 				}
 			})
 				? undefined
@@ -232,6 +286,23 @@ const server = Bun.serve<SocketData>({
 				return;
 			}
 
+			if (ws.data.path === '/ws/spectate' && ws.data.spectatorId) {
+				const store = await getStore();
+				const meta = await store.getMeta();
+				send(ws, {
+					type: 'spectator.welcome',
+					id: ws.data.spectatorId,
+					visible: ws.data.visible,
+					orbsHidden: meta.orbsHidden
+				});
+				send(ws, orbMessage());
+				send(ws, ghostMessage());
+				send(ws, await shadows());
+				send(ws, await scoreboard());
+				broadcastOrbs();
+				return;
+			}
+
 			if (ws.data.code) await markConnected(ws.data.code, true);
 			send(ws, {
 				type: 'welcome',
@@ -241,6 +312,8 @@ const server = Bun.serve<SocketData>({
 				accepted: ws.data.accepted
 			});
 			send(ws, ghostMessage());
+			send(ws, orbMessage());
+			send(ws, { type: 'orbsHidden', hidden: (await (await getStore()).getMeta()).orbsHidden });
 			send(ws, bossList(await liveConfig()));
 
 			if (ws.data.house) {
@@ -278,6 +351,33 @@ const server = Bun.serve<SocketData>({
 			}
 			if (message.type === 'ping') {
 				send(ws, { type: 'pong', sentAt: message.sentAt });
+				return;
+			}
+
+			if (ws.data.path === '/ws/spectate') {
+				if (message.type === 'spectatorMove' && ws.data.spectatorId) {
+					orbPositions.set(ws.data.spectatorId, {
+						id: ws.data.spectatorId,
+						floor: message.floor,
+						x: message.x,
+						y: message.y,
+						visible: ws.data.visible
+					});
+					broadcastOrbs();
+					return;
+				}
+				if (message.type === 'spectatorVisible') {
+					ws.data.visible = message.visible;
+					const orb = ws.data.spectatorId ? orbPositions.get(ws.data.spectatorId) : null;
+					if (orb) orb.visible = message.visible;
+					broadcastOrbs();
+					return;
+				}
+				send(ws, {
+					type: 'error',
+					code: 'SPECTATOR_READ_ONLY',
+					message: 'Spectators cannot interact with the game'
+				});
 				return;
 			}
 
@@ -346,6 +446,11 @@ const server = Bun.serve<SocketData>({
 		},
 		async close(ws) {
 			sockets.delete(ws);
+			if (ws.data.path === '/ws/spectate' && ws.data.spectatorId) {
+				orbPositions.delete(ws.data.spectatorId);
+				broadcastOrbs();
+				return;
+			}
 			if (ws.data.path !== '/ws/spike' && ws.data.code) {
 				const house = ws.data.house;
 				const store = await getStore();

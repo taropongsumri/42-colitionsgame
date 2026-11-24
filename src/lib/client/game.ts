@@ -47,6 +47,14 @@ export interface Ghost {
 	y: number;
 }
 
+export interface Orb {
+	id: string;
+	floor: number;
+	x: number;
+	y: number;
+	visible: boolean;
+}
+
 export type GameOptions = {
 	canvas: HTMLCanvasElement;
 	house: HouseId;
@@ -58,6 +66,8 @@ export type GameOptions = {
 
 type Target = { floor: number; x: number; y: number };
 type GhostTrack = Ghost & { tx: number; ty: number; seen: number };
+type OrbTrack = Orb & { tx: number; ty: number; seen: number };
+const ORB_COLORS = ['#7ef9ff', '#ffe680', '#ff9de2', '#a6ff9e', '#c4b5fd', '#ffb27e'];
 
 function loadImage(src: string): HTMLImageElement {
 	const image = new Image();
@@ -99,6 +109,8 @@ export function createGame(options: GameOptions) {
 	const trail: { t: number; x: number; y: number }[] = [];
 	const keys = new Set<string>();
 	const ghosts = new Map<HouseId, GhostTrack>();
+	const orbs = new Map<string, OrbTrack>();
+	let orbsHidden = false;
 	const solved = new Set<string>();
 	let bossOptions: BossOption[] = [];
 	let bossSelected = 0;
@@ -177,6 +189,10 @@ export function createGame(options: GameOptions) {
 		for (const ghost of ghosts.values()) {
 			ghost.x += (ghost.tx - ghost.x) * ease;
 			ghost.y += (ghost.ty - ghost.y) * ease;
+		}
+		for (const orb of orbs.values()) {
+			orb.x += (orb.tx - orb.x) * ease;
+			orb.y += (orb.ty - orb.y) * ease;
 		}
 
 		if (fade) {
@@ -311,6 +327,17 @@ export function createGame(options: GameOptions) {
 				nameColor: HOUSES[id].color
 			});
 		}
+		for (const orb of orbs.values()) {
+			if (!orb.visible || orbsHidden || orb.floor !== map.floor || now - orb.seen > 4000) continue;
+			const color = ORB_COLORS[[...orb.id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % ORB_COLORS.length];
+			actors.push({
+				x: orb.x,
+				y: orb.y,
+				img: null,
+				orb: color,
+				bob: Math.sin(t * 3 + orb.x) * 3
+			});
+		}
 		actors.push(
 			{ x: pet.x, y: pet.y, img: petImage, flip: pet.flip, bob: Math.round(Math.sin(t * 6)) },
 			{ x: pos.x, y: pos.y, img: playerImage, bob }
@@ -418,6 +445,27 @@ export function createGame(options: GameOptions) {
 			for (const id of [...ghosts.keys()]) {
 				if (!list.some((ghost) => ghost.house === id)) ghosts.delete(id);
 			}
+		},
+		setOrbs(list: Orb[]) {
+			const seen = performance.now();
+			for (const orb of list) {
+				const current = orbs.get(orb.id);
+				if (!current || current.floor !== orb.floor) {
+					orbs.set(orb.id, { ...orb, tx: orb.x, ty: orb.y, seen });
+				} else {
+					current.tx = orb.x;
+					current.ty = orb.y;
+					current.floor = orb.floor;
+					current.visible = orb.visible;
+					current.seen = seen;
+				}
+			}
+			for (const id of [...orbs.keys()]) {
+				if (!list.some((orb) => orb.id === id)) orbs.delete(id);
+			}
+		},
+		setOrbsHidden(hidden: boolean) {
+			orbsHidden = hidden;
 		},
 		get running() {
 			return running;

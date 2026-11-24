@@ -50,7 +50,8 @@ function waitForMessage(
 	type: string,
 	fromIndex: number,
 	predicate: (message: Message) => boolean = () => true,
-	timeoutMs = 5000
+	timeoutMs = 5000,
+	source: Message[] = messages
 ): Promise<Message> {
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => {
@@ -58,7 +59,7 @@ function waitForMessage(
 			reject(new Error(`timed out waiting for ${type}`));
 		}, timeoutMs);
 		function check() {
-			const found = messages.slice(fromIndex).find((m) => m.type === type && predicate(m));
+			const found = source.slice(fromIndex).find((m) => m.type === type && predicate(m));
 			if (found) {
 				clearTimeout(timer);
 				listeners.delete(check);
@@ -220,6 +221,166 @@ const resetBoss = await fetch(`${base}/api/admin/config/reset`, {
 	headers: adminHeaders
 });
 assert(resetBoss.ok, 'config reset after per-boss test');
+
+// 7c. Phase 4 admin APIs: audit log, question bank and Discord status.
+const auditTrigger = await fetch(`${base}/api/admin/control`, {
+	method: 'POST',
+	headers: adminHeaders,
+	body: JSON.stringify({ action: 'announce', text: 'phase4 audit check' })
+});
+assert(auditTrigger.ok, 'admin action creates an audit entry');
+const unauthorizedLogs = await fetch(`${base}/api/admin/logs`);
+assert(unauthorizedLogs.status === 401, 'audit log requires admin password');
+const logsResponse = await fetch(`${base}/api/admin/logs?limit=50&type=admin.control`, {
+	headers: adminHeaders
+});
+assert(logsResponse.ok, 'admin audit log API responds');
+const logData = (await logsResponse.json()) as {
+	logs: { type: string; message: string }[];
+	configHistory: { by: string }[];
+};
+assert(logData.logs.some((entry) => entry.type === 'admin.control'), 'audit log contains admin actions');
+assert(logData.configHistory.length > 0, 'config history is exposed to admin');
+
+const questionResponse = await fetch(`${base}/api/admin/questions`, { headers: adminHeaders });
+assert(questionResponse.ok, 'question bank API responds');
+const originalQuestions = ((await questionResponse.json()) as { questions: unknown[] }).questions;
+assert(originalQuestions.length >= 10, 'question bank lists seeded questions');
+const temporaryQuestions = [{ ...(originalQuestions[0] as object), question: 'Phase 4 temporary question' }];
+const savedQuestions = await fetch(`${base}/api/admin/questions`, {
+	method: 'PUT',
+	headers: adminHeaders,
+	body: JSON.stringify({ questions: temporaryQuestions })
+});
+assert(savedQuestions.ok, 'question bank saves through admin API');
+const reloadedQuestions = (await (
+	await fetch(`${base}/api/admin/questions`, { headers: adminHeaders })
+).json()) as { questions: { question: string }[] };
+assert(reloadedQuestions.questions[0].question === 'Phase 4 temporary question', 'question edit round trips');
+const restoredQuestions = await fetch(`${base}/api/admin/questions`, {
+	method: 'PUT',
+	headers: adminHeaders,
+	body: JSON.stringify({ questions: originalQuestions })
+});
+assert(restoredQuestions.ok, 'question bank restored after test');
+
+const discordStatus = (await (
+	await fetch(`${base}/api/admin/discord`, { headers: adminHeaders })
+).json()) as { configured: boolean; maxPerMinute: number };
+assert(discordStatus.maxPerMinute === 30, 'Discord rate limit is reported to admin');
+assert(discordStatus.configured === false, 'Discord is optional and disabled by default');
+const discordTest = (await (
+	await fetch(`${base}/api/admin/discord`, {
+		method: 'POST',
+		headers: adminHeaders,
+		body: JSON.stringify({ test: true })
+	})
+).json()) as { ok: boolean; reason?: string };
+assert(discordTest.ok === false && discordTest.reason === 'disabled', 'Discord test reports disabled webhook');
+
+// 7d. Spectator key gate, read-only orb, visibility toggle and admin global hide.
+const badKey = await fetch(`${base}/ws/spectate?key=wrong-key`, {
+	headers: { upgrade: 'websocket' }
+}).catch(() => null);
+assert(badKey?.status === 401, 'spectator key gate rejects an invalid key');
+
+const spectatorMessages: Message[] = [];
+const spectatorSocket = new WebSocket(`${wsBase}/ws/spectate?key=spectate`);
+let spectatorStatus = 'connecting';
+spectatorSocket.onmessage = (event) => {
+	spectatorMessages.push(JSON.parse(String(event.data)) as Message);
+	for (const listener of listeners) listener();
+};
+spectatorSocket.onopen = () => (spectatorStatus = 'open');
+spectatorSocket.onerror = () => (spectatorStatus = 'error');
+const spectatorWelcome = await waitForMessage(
+	'spectator.welcome',
+	0,
+	(m) => typeof m.id === 'string' && m.id.length > 0,
+	5000,
+	spectatorMessages
+);
+assert(spectatorStatus === 'open', 'spectator websocket opened with the correct key');
+assert(spectatorWelcome.visible === true && spectatorWelcome.orbsHidden === false, 'spectator orb starts visible');
+const orbId = String(spectatorWelcome.id);
+
+cursor = messages.length;
+let spectatorCursor = spectatorMessages.length;
+spectatorSocket.send(JSON.stringify({ type: 'spectatorMove', floor: 2, x: 150, y: 88 }));
+const spectatorSeenByPlayer = await waitForMessage(
+	'orbs',
+	cursor,
+	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.x === 150 && orb.y === 88)
+);
+const spectatorSeenBySelf = await waitForMessage(
+	'orbs',
+	spectatorCursor,
+	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.floor === 2),
+	5000,
+	spectatorMessages
+);
+assert(spectatorSeenByPlayer.orbs.some((orb: any) => orb.id === orbId), 'player socket receives spectator orb');
+assert(spectatorSeenBySelf.orbs.some((orb: any) => orb.id === orbId), 'spectator receives its own orb');
+
+cursor = messages.length;
+spectatorCursor = spectatorMessages.length;
+spectatorSocket.send(JSON.stringify({ type: 'spectatorVisible', visible: false }));
+const orbHiddenByOwner = await waitForMessage(
+	'orbs',
+	cursor,
+	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.visible === false)
+);
+assert(orbHiddenByOwner.orbs.some((orb: any) => orb.id === orbId && orb.visible === false), 'orb visibility toggle is broadcast');
+spectatorCursor = spectatorMessages.length;
+spectatorSocket.send(JSON.stringify({ type: 'spectatorVisible', visible: true }));
+await waitForMessage(
+	'orbs',
+	spectatorCursor,
+	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.visible === true),
+	5000,
+	spectatorMessages
+);
+assert(true, 'spectator can show its orb again');
+
+const roomBeforeSpectatorAnswer = (await store.getHouse('h1'))!.room;
+spectatorCursor = spectatorMessages.length;
+spectatorSocket.send(JSON.stringify({ type: 'answer', roomId: 'r1', answer: 'anything' }));
+const readOnly = await waitForMessage(
+	'error',
+	spectatorCursor,
+	(m) => m.code === 'SPECTATOR_READ_ONLY',
+	5000,
+	spectatorMessages
+);
+assert(readOnly.code === 'SPECTATOR_READ_ONLY', 'spectators cannot submit answers');
+assert((await store.getHouse('h1'))!.room === roomBeforeSpectatorAnswer, 'spectator message does not change progress');
+
+cursor = messages.length;
+spectatorCursor = spectatorMessages.length;
+const hideOrbs = await fetch(`${base}/api/admin/control`, {
+	method: 'POST',
+	headers: adminHeaders,
+	body: JSON.stringify({ action: 'hideOrbs', hidden: true })
+});
+assert(hideOrbs.ok, 'admin can globally hide spectator orbs');
+await waitForMessage('orbsHidden', cursor, (m) => m.hidden === true);
+await waitForMessage('orbsHidden', spectatorCursor, (m) => m.hidden === true, 5000, spectatorMessages);
+assert(true, 'global orb hide reaches players and spectators');
+
+cursor = messages.length;
+const showOrbs = await fetch(`${base}/api/admin/control`, {
+	method: 'POST',
+	headers: adminHeaders,
+	body: JSON.stringify({ action: 'hideOrbs', hidden: false })
+});
+assert(showOrbs.ok, 'admin can restore spectator orbs');
+await waitForMessage('orbsHidden', cursor, (m) => m.hidden === false);
+assert((await store.getMeta()).orbsHidden === false, 'global orb visibility restored in store');
+
+cursor = messages.length;
+spectatorSocket.close();
+await waitForMessage('orbs', cursor, (m) => Array.isArray(m.orbs) && m.orbs.length === 0);
+assert(true, 'spectator orb disappears when the spectator leaves');
 
 // 7b. Boss phase: lift unlock, server-owned answers, typing and audition.
 const bossConfig = (await (

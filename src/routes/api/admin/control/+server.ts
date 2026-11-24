@@ -2,11 +2,20 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { isAdmin } from '$lib/server/admin';
 import { control, type ControlInput } from '$lib/server/game/control';
-import { broadcastNotice } from '$lib/server/ws-control';
+import { broadcastNotice, broadcastOrbsHidden, broadcastRefresh } from '$lib/server/ws-control';
 import { HOUSE_IDS, type HouseId } from '$lib/shared/types';
 
 const actions: ControlInput['action'][] = [
-	'start', 'pause', 'resume', 'addTime', 'adjustScore', 'forceUnlock', 'forceBoss', 'announce', 'end'
+	'start',
+	'pause',
+	'resume',
+	'addTime',
+	'adjustScore',
+	'forceUnlock',
+	'forceBoss',
+	'announce',
+	'hideOrbs',
+	'end'
 ];
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -20,5 +29,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const result = await control(body);
 	if (result.notice !== undefined) await broadcastNotice(result.notice);
+	if (body.action === 'hideOrbs') await broadcastOrbsHidden(body.hidden === true);
+	else await broadcastRefresh();
 	return json({ ok: true, ...result });
 };

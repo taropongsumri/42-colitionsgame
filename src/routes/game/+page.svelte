@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy, onMount } from 'svelte';
 	import { advanceBossWords } from '$lib/client/bossWords';
-	import { createGame, type BossOption, type Ghost, type Hud } from '$lib/client/game';
+	import { createGame, type BossOption, type Ghost, type Hud, type Orb } from '$lib/client/game';
 	import BossFight from '$lib/components/game/BossFight.svelte';
 	import Terminal from '$lib/components/game/Terminal.svelte';
 	import { realTableFor } from '$lib/shared/dungeon';
@@ -228,6 +228,12 @@
 						break;
 					case 'ghosts':
 						game?.setGhosts(message.houses as Ghost[]);
+						break;
+					case 'orbs':
+						game?.setOrbs(message.orbs as Orb[]);
+						break;
+					case 'orbsHidden':
+						game?.setOrbsHidden(Boolean(message.hidden));
 						break;
 					case 'scoreboard':
 						scoreboard = message as unknown as Scoreboard;

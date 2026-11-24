@@ -91,7 +91,7 @@ This project therefore uses a custom Bun server (`server.ts`) that:
 - [x] **Phase 0** — scaffold, compatible dependencies, HTTP + WebSocket spike, shared protocol
 - [x] **Phase 1** — config, local/Mongo storage, machine codes, admin accept/kick/move, reconnect, boss-disconnect reset, live config, seed script
 - [x] **Phase 2** — quiz rooms, terminals/locks/hints, sprites, fog/shadows, clock, scoring, scoreboard, admin controls
-- [ ] Phase 3 — boss mechanics
-- [ ] Phase 4 — full admin, spectator, Discord, audit log
+- [x] **Phase 3** — boss mechanics
+- [x] **Phase 4** — full admin, spectator, Discord, audit log
 - [ ] Phase 5 — pixel-art client and effects
 - [ ] Phase 6 — hardening and deploy docs

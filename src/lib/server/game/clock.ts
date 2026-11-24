@@ -8,7 +8,8 @@ export const defaultMeta = (): GameMeta => ({
 	paused: false,
 	remainingMs: 0,
 	announcement: null,
-	finished: false
+	finished: false,
+	orbsHidden: false
 });
 
 export async function timeLeftMs(store?: Store): Promise<number> {

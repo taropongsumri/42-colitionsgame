@@ -1,5 +1,6 @@
 import type { ServerMessage } from '../../shared/protocol';
 import type { HouseId } from '../../shared/types';
+import { audit } from '../audit';
 import { liveConfig } from '../config';
 import { getStore } from '../db';
 import { isCorrectAnswer } from './answer';
@@ -68,8 +69,7 @@ export async function submitAnswer(house: HouseId, answer: string): Promise<Play
 		const lockUntil = now + config.game.wrongAnswerLockSeconds * 1000;
 		state.answerLockUntil = lockUntil;
 		await store.saveHouse(state);
-		await store.appendLog({
-			at: now,
+		await audit({
 			type: 'answer.wrong',
 			house,
 			message: `Wrong answer in room ${state.room}`,
@@ -90,13 +90,16 @@ export async function submitAnswer(house: HouseId, answer: string): Promise<Play
 	state.answerLockUntil = null;
 	await store.saveHouse(state);
 
-	await store.appendLog({
-		at: now,
-		type: 'answer.correct',
-		house,
-		message: `Room ${state.room - 1} cleared (+${points})`,
-		data: { questionId: question.id, place, points }
-	});
+	await audit(
+		{
+			type: 'answer.correct',
+			house,
+			message: `Room ${state.room - 1} cleared (+${points})`,
+			data: { questionId: question.id, place, points }
+		},
+		'room.cleared',
+		{ text: `${house} cleared room ${state.room - 1}` }
+	);
 
 	const ordinal = ['1st', '2nd', '3rd'][place - 1] ?? `${place}th`;
 	return {

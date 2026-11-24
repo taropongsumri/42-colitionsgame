@@ -15,6 +15,8 @@ export type Actor = {
 	bob?: number;
 	alpha?: number;
 	ghost?: string;
+	/** Spectator light orb colour; orbs float and ignore fog of war. */
+	orb?: string;
 	/** Optional house label drawn above full-colour actors. */
 	name?: string;
 	nameColor?: string;
@@ -336,6 +338,21 @@ function drawTransport(ctx: CanvasRenderingContext2D, prop: Prop, cam: Camera, t
 
 function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, cam: Camera) {
 	const x = Math.round(actor.x - cam.x), y = Math.round(actor.y - cam.y);
+	if (actor.orb) {
+		const pulse = 0.8 + Math.sin(performance.now() / 320 + actor.x) * 0.2;
+		ctx.save();
+		ctx.globalAlpha = (actor.alpha ?? 1) * pulse;
+		ctx.fillStyle = actor.orb;
+		ctx.shadowColor = actor.orb;
+		ctx.shadowBlur = 14;
+		ctx.beginPath();
+		ctx.arc(x, y - 12 - (actor.bob ?? 0), 5, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.shadowBlur = 0;
+		label(ctx, 'SPECTATOR', x, y - 26, actor.orb);
+		ctx.restore();
+		return;
+	}
 	if (!actor.ghost) ellipse(ctx, x, y, 6, 2, C.shadow);
 	if (!actor.img || !actor.img.complete || !actor.img.width) return;
 	const width = actor.img.width, height = actor.img.height;

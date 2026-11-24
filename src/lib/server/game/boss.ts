@@ -5,9 +5,11 @@
 import type { LiveConfig } from '../../../../config';
 import type { ServerMessage } from '../../shared/protocol';
 import { HOUSES, type HouseId } from '../../shared/types';
+import { audit } from '../audit';
 import { liveConfig } from '../config';
 import { getStore } from '../db';
 import { emptyBoss, type BossState, type HouseState } from '../db/types';
+import { notifyDiscord } from '../discord';
 import { normalizeAnswer } from './answer';
 import { bonusPercent } from './scoring';
 
@@ -151,6 +153,7 @@ function stunPlayer(house: HouseState, boss: BossConfig): ServerMessage {
 	fight.attackAt = until + 1000;
 	house.answerLockUntil = null;
 	house.score = Math.max(0, house.score - boss.stunPenalty);
+	notifyDiscord('boss.stun', { house: house.id, text: `${boss.name} knocked out ${house.id}` });
 	return {
 		type: 'boss.stun',
 		until,
@@ -197,13 +200,16 @@ export async function enterBoss(houseId: HouseId, bossId: string): Promise<BossR
 	});
 	house.answerLockUntil = null;
 	await store.saveHouse(house);
-	await store.appendLog({
-		at,
-		type: 'boss.enter',
-		house: houseId,
-		message: `${houseId} entered ${boss.name}`,
-		data: { bossId: boss.id }
-	});
+	await audit(
+		{
+			type: 'boss.enter',
+			house: houseId,
+			message: `${houseId} entered ${boss.name}`,
+			data: { bossId: boss.id }
+		},
+		'boss.enter',
+		{ text: `${houseId} entered ${boss.name}` }
+	);
 
 	return {
 		messages: [
@@ -304,13 +310,16 @@ export async function submitBossWord(houseId: HouseId, word: string): Promise<Bo
 	if (won) messages.push(...(await finishBoss(house, config)));
 	await store.saveHouse(house);
 	if (won) {
-		await store.appendLog({
-			at: now(),
-			type: 'boss.win',
-			house: houseId,
-			message: `${houseId} broke the boss combo`,
-			data: { bossId: boss.id, combo }
-		});
+		await audit(
+			{
+				type: 'boss.win',
+				house: houseId,
+				message: `${houseId} broke the boss combo`,
+				data: { bossId: boss.id, combo }
+			},
+			'boss.defeated',
+			{ text: `${houseId} defeated ${boss.name} at x${combo}` }
+		);
 	}
 
 	return { messages, progressChanged: won };
@@ -409,8 +418,7 @@ export async function submitBossAnswer(houseId: HouseId, answer: string): Promis
 		if (attack) messages.push(attack);
 		if (fight.playerHp <= 0) messages.push(stunPlayer(house, boss));
 		await store.saveHouse(house);
-		await store.appendLog({
-			at,
+		await audit({
 			type: 'boss.answer.wrong',
 			house: houseId,
 			message: 'Wrong boss answer',
@@ -434,8 +442,7 @@ export async function submitBossAnswer(houseId: HouseId, answer: string): Promis
 		move: null
 	};
 	await store.saveHouse(house);
-	await store.appendLog({
-		at,
+	await audit({
 		type: 'boss.answer.correct',
 		house: houseId,
 		message: 'Boss audition started',
@@ -619,8 +626,7 @@ export async function bossTick(): Promise<BossTick> {
 
 		if (dirty) {
 			await store.saveHouse(house);
-			await store.appendLog({
-				at,
+			await audit({
 				type: fight.active ? 'boss.tick' : 'boss.win',
 				house: house.id,
 				message: fight.active ? 'Boss fight tick' : 'Boss defeated',

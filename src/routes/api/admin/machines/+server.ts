@@ -6,5 +6,9 @@ import { getStore } from '$lib/server/db';
 export const GET: RequestHandler = async ({ request }) => {
 	if (!isAdmin(request)) return json({ error: 'Unauthorized' }, { status: 401 });
 	const store = await getStore();
-	return json({ machines: await store.listMachines(), houses: await store.listHouses() });
+	return json({
+		machines: await store.listMachines(),
+		houses: await store.listHouses(),
+		meta: await store.getMeta()
+	});
 };
