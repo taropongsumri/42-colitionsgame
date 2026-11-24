@@ -3,6 +3,12 @@
  * progress live here; clients only receive public state and effects.
  */
 import type { LiveConfig } from '../../../../config';
+import {
+	FLOOR_COUNT,
+	TOTAL_QUESTION_SLOTS,
+	floorForRoom,
+	roomForFloorPlug
+} from '../../shared/map';
 import type { ServerMessage } from '../../shared/protocol';
 import { HOUSES, type HouseId } from '../../shared/types';
 import { audit } from '../audit';
@@ -28,6 +34,7 @@ const now = () => Date.now();
 function publicBoss(boss: BossConfig) {
 	return {
 		id: boss.id,
+		floor: boss.floor,
 		name: boss.name,
 		title: boss.title,
 		question: boss.question,
@@ -35,8 +42,14 @@ function publicBoss(boss: BossConfig) {
 	};
 }
 
-export function bossList(config: LiveConfig): ServerMessage {
-	return { type: 'boss.list', bosses: config.boss.bosses.map(publicBoss) };
+export function bossList(config: LiveConfig, house?: HouseState | null): ServerMessage {
+	return {
+		type: 'boss.list',
+		bosses: config.boss.bosses.map((boss) => ({
+			...publicBoss(boss),
+			defeated: !!house?.defeatedBosses?.includes(boss.id)
+		}))
+	};
 }
 
 export function findBoss(config: LiveConfig, id: string | null): BossConfig | null {
@@ -178,15 +191,38 @@ export async function enterBoss(houseId: HouseId, bossId: string): Promise<BossR
 		};
 	}
 
-	if (house.room <= config.game.roomCount || house.solvedRooms.length < config.game.roomCount) {
+	if (house.defeatedBosses?.includes(boss.id)) {
 		return {
-			messages: [
-				error('BOSS_LOCKED', `Clear all ${config.game.roomCount} plugs before taking the lift.`)
-			]
+			messages: [error('BOSS_DEFEATED', `${boss.name} has already been defeated.`)],
+			notice: `${boss.name} has already been defeated`
 		};
 	}
 
 	const at = now();
+	if (house.bossRetryAt && house.bossRetryAt > at) {
+		const seconds = Math.ceil((house.bossRetryAt - at) / 1000);
+		return {
+			messages: [error('BOSS_RETRY', `Wait ${seconds}s before retrying ${boss.name}.`)],
+			notice: `Boss retry available in ${seconds}s`
+		};
+	}
+
+	const clearedOnFloor = house.solvedRooms.filter(
+		(room) => floorForRoom(room) === boss.floor
+	).length;
+	if (clearedOnFloor < config.game.plugsPerFloor) {
+		return {
+			messages: [
+				error(
+					'BOSS_LOCKED',
+					`Clear all ${config.game.plugsPerFloor} plugs on floor ${boss.floor} before taking the lift.`
+				)
+			]
+		};
+	}
+
+	// Pokémon-style: every fight begins with the boss at full HP, regardless of
+	// how the previous attempt ended. Damage and timed state never carry over.
 	house.boss = emptyBoss({
 		active: true,
 		bossId: boss.id,
@@ -199,22 +235,24 @@ export async function enterBoss(houseId: HouseId, bossId: string): Promise<BossR
 		startedAt: at
 	});
 	house.answerLockUntil = null;
+	house.bossRetryAt = null;
 	await store.saveHouse(house);
 	await audit(
 		{
 			type: 'boss.enter',
 			house: houseId,
-			message: `${houseId} entered ${boss.name}`,
-			data: { bossId: boss.id }
+			message: `${houseId} entered ${boss.name} at full HP`,
+			data: { bossId: boss.id, floor: boss.floor, hp: boss.hp }
 		},
 		'boss.enter',
-		{ text: `${houseId} entered ${boss.name}` }
+		{ text: `${houseId} entered ${boss.name} on floor ${boss.floor}` }
 	);
 
 	return {
 		messages: [
 			bossStart(house, boss),
-			{ type: 'notice', text: `${boss.name} appeared. Type to build shield, Tab to answer.` }],
+			{ type: 'notice', text: `${boss.name} appeared. Type to build shield, Tab to answer.` }
+		],
 		notice: `${houseId} entered boss ${boss.name}`,
 		progressChanged: true
 	};
@@ -507,13 +545,22 @@ export async function swapBossPlayer(houseId: HouseId): Promise<BossResult> {
 
 async function finishBoss(house: HouseState, config: LiveConfig): Promise<ServerMessage[]> {
 	const fight = house.boss;
+	const boss = findBoss(config, fight.bossId);
+	const floor = boss?.floor ?? floorForRoom(house.room);
 	fight.active = false;
 	fight.mode = 'idle';
 	fight.hp = 0;
 	fight.audition = null;
 	fight.lockUntil = null;
 	house.answerLockUntil = null;
-	house.status = 'solved';
+	house.bossRetryAt = null;
+	if (boss && !house.defeatedBosses.includes(boss.id)) house.defeatedBosses.push(boss.id);
+	const allDefeated = config.boss.bosses.every((entry) => house.defeatedBosses.includes(entry.id));
+	if (!allDefeated && floor < FLOOR_COUNT) {
+		// Floors are strictly sequential: the lift only opens the next six plugs.
+		house.room = roomForFloorPlug(floor + 1, 1);
+	}
+	house.status = allDefeated || floor >= FLOOR_COUNT ? 'solved' : 'open';
 
 	const houses = await getStore().then((store) => store.listHouses());
 	const sorted = [...houses].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
@@ -522,9 +569,21 @@ async function finishBoss(house: HouseState, config: LiveConfig): Promise<Server
 	house.score += points;
 
 	return [
-		{ type: 'boss.end', won: true, score: house.score, bossHp: fight.hp, reason: 'win' },
+		{
+			type: 'boss.end',
+			won: true,
+			score: house.score,
+			bossHp: fight.hp,
+			reason: 'win',
+			floor
+		},
 		{ type: 'state', state: house },
-		{ type: 'notice', text: `${HOUSES[house.id].name} defeated the boss! +${points} points.` }
+		{
+			type: 'notice',
+			text: `${HOUSES[house.id].name} defeated ${boss?.name ?? 'the boss'}${
+				allDefeated ? ' and escaped the backrooms' : ` · floor ${floor + 1} unlocked`
+			}! +${points} points.`
+		}
 	];
 }
 
@@ -532,15 +591,27 @@ async function finishBoss(house: HouseState, config: LiveConfig): Promise<Server
 async function finishBossLoss(house: HouseState, config: LiveConfig): Promise<ServerMessage[]> {
 	const boss = findBoss(config, house.boss.bossId);
 	const penalty = house.boss.penalty;
+	const floor = boss?.floor ?? floorForRoom(house.room);
+	const retryAt = now() + Math.max(0, config.game.bossRetryDelaySeconds) * 1000;
 	house.boss = emptyBoss();
 	house.answerLockUntil = null;
+	house.bossRetryAt = retryAt;
+	house.status = 'boss';
 
 	return [
-		{ type: 'boss.end', won: false, score: house.score, bossHp: 0, reason: 'knockout' },
+		{
+			type: 'boss.end',
+			won: false,
+			score: house.score,
+			bossHp: 0,
+			reason: 'knockout',
+			retryAt,
+			floor
+		},
 		{ type: 'state', state: house },
 		{
 			type: 'notice',
-			text: `${HOUSES[house.id].name} was knocked out of ${boss?.name ?? 'the boss'} · -${penalty} points.`
+			text: `${HOUSES[house.id].name} was knocked out of ${boss?.name ?? 'the boss'} · -${penalty} points · retry in ${config.game.bossRetryDelaySeconds}s.`
 		}
 	];
 }

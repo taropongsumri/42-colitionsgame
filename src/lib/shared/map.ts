@@ -1,12 +1,15 @@
 // Ported from the earlier pixel-art prototype's src/lib/shared/maps.ts.
 // Each floor is one big white cluster room with round pizza tables. Every table has
-// four iMacs and four black chairs; five tables per floor are question plugs.
+// four iMacs and four black chairs; six tables per floor are question plugs.
 //   # wall   . floor   T table   Q question table   S stairs   E lift   P spawn
 //   D door between the outside forecourt and floor 1
 // Outside (floor 0): B building, s steps, - paving, = road, g grass, Y tree.
 
 export const TILE = 16;
-export const QUESTIONS_PER_FLOOR = 5;
+/** Phase 5: every floor has six plug tables and one boss gate. */
+export const QUESTIONS_PER_FLOOR = 6;
+export const FLOOR_COUNT = 5;
+export const TOTAL_QUESTION_SLOTS = QUESTIONS_PER_FLOOR * FLOOR_COUNT;
 
 export type PropKind = 'table' | 'chair' | 'stairs' | 'elevator' | 'door' | 'tree';
 export type Prop = {
@@ -44,36 +47,36 @@ type FloorSpec = {
 const SPECS: FloorSpec[] = [
 	{
 		w: 40, h: 22,
-		tables: [[4, 3], [18, 3], [25, 6], [7, 8], [15, 9], [29, 9], [36, 8], [12, 14], [19, 15], [27, 14], [8, 18], [24, 19], [31, 18]],
-		questions: [[11, 4], [32, 4], [22, 10], [4, 13], [34, 14]],
+		tables: [[18, 3], [25, 6], [7, 8], [15, 9], [29, 9], [36, 8], [12, 14], [19, 15], [27, 14], [8, 18], [24, 19], [31, 18]],
+		questions: [[4, 3], [11, 4], [32, 4], [22, 10], [4, 13], [34, 14]],
 		pillars: [[20, 7], [10, 11], [32, 11]],
 		stairs: [35, 1], lift: [29, 1], spawn: [3, 19], door: [3, 20]
 	},
 	{
 		w: 40, h: 22,
-		tables: [[5, 4], [13, 3], [27, 3], [17, 10], [25, 9], [32, 11], [4, 14], [12, 15], [28, 15], [35, 16], [8, 19], [24, 19], [31, 19]],
-		questions: [[20, 5], [35, 6], [9, 9], [20, 14], [16, 19]],
+		tables: [[13, 3], [27, 3], [17, 10], [25, 9], [32, 11], [4, 14], [12, 15], [28, 15], [35, 16], [8, 19], [24, 19], [31, 19]],
+		questions: [[5, 4], [20, 5], [35, 6], [9, 9], [20, 14], [16, 19]],
 		pillars: [[13, 7], [29, 7], [24, 13]],
 		stairs: [35, 1], lift: [29, 1], spawn: [3, 19]
 	},
 	{
 		w: 40, h: 22,
-		tables: [[6, 3], [21, 3], [33, 4], [10, 7], [16, 6], [26, 8], [36, 9], [3, 12], [13, 12], [22, 13], [30, 13], [10, 17], [25, 17]],
-		questions: [[14, 3], [31, 7], [20, 9], [5, 15], [33, 16]],
+		tables: [[21, 3], [33, 4], [10, 7], [16, 6], [26, 8], [36, 9], [3, 12], [13, 12], [22, 13], [30, 13], [10, 17], [25, 17]],
+		questions: [[6, 3], [14, 3], [31, 7], [20, 9], [5, 15], [33, 16]],
 		pillars: [[24, 4], [11, 10], [34, 11]],
 		stairs: [35, 1], lift: [29, 1], spawn: [3, 19]
 	},
 	{
 		w: 40, h: 22,
-		tables: [[8, 4], [20, 4], [31, 3], [4, 9], [14, 10], [25, 10], [36, 7], [21, 8], [11, 15], [19, 16], [27, 15], [34, 17], [16, 19]],
-		questions: [[13, 4], [25, 4], [30, 11], [7, 12], [22, 19]],
+		tables: [[20, 4], [31, 3], [4, 9], [14, 10], [25, 10], [36, 7], [21, 8], [11, 15], [19, 16], [27, 15], [34, 17], [16, 19]],
+		questions: [[8, 4], [13, 4], [25, 4], [30, 11], [7, 12], [22, 19]],
 		pillars: [[17, 7], [28, 6], [8, 13]],
 		stairs: [35, 1], lift: [29, 1], spawn: [3, 19]
 	},
 	{
 		w: 40, h: 22,
-		tables: [[5, 5], [13, 4], [24, 5], [33, 3], [9, 9], [18, 10], [29, 9], [36, 11], [4, 15], [15, 14], [23, 15], [32, 17], [12, 19]],
-		questions: [[20, 7], [27, 13], [17, 18], [36, 15], [8, 12]],
+		tables: [[13, 4], [24, 5], [33, 3], [9, 9], [18, 10], [29, 9], [36, 11], [4, 15], [15, 14], [23, 15], [32, 17], [12, 19]],
+		questions: [[5, 5], [20, 7], [27, 13], [17, 18], [36, 15], [8, 12]],
 		pillars: [[14, 7], [25, 11], [9, 17]],
 		stairs: [35, 1], lift: [29, 1], spawn: [3, 19]
 	}
@@ -182,13 +185,31 @@ export const tileAt = (map: FloorMap, tx: number, ty: number): string =>
 	ty < 0 || ty >= map.h || tx < 0 || tx >= map.w ? '#' : map.rows[ty][tx];
 export const isWall = (c: string) => c === '#' || c === 'B';
 
-/** Room 1-5 live on floor 1, room 6-10 on floor 2, and so on. */
+/** Plug 1-6 live on floor 1, plug 7-12 on floor 2, and so on. */
 export function floorForRoom(room: number): number {
-	return Math.max(1, Math.ceil(Math.max(1, room) / QUESTIONS_PER_FLOOR));
+	return Math.min(
+		FLOOR_COUNT,
+		Math.max(1, Math.ceil(Math.max(1, Math.min(TOTAL_QUESTION_SLOTS, room)) / QUESTIONS_PER_FLOOR))
+	);
+}
+
+/** The global plug counter is kept internally; players see floor + plug instead. */
+export function plugForRoom(room: number): number {
+	return questionIndexForRoom(room) + 1;
+}
+
+export function roomForFloorPlug(floor: number, plug: number): number {
+	return (Math.min(FLOOR_COUNT, Math.max(1, floor)) - 1) * QUESTIONS_PER_FLOOR +
+		Math.min(QUESTIONS_PER_FLOOR, Math.max(1, plug));
 }
 
 export function questionIndexForRoom(room: number): number {
 	return (Math.max(1, room) - 1) % QUESTIONS_PER_FLOOR;
+}
+
+/** Floor/plug pair shown to players instead of the internal global plug number. */
+export function floorAndPlug(room: number): { floor: number; plug: number } {
+	return { floor: floorForRoom(room), plug: plugForRoom(room) };
 }
 
 export function questionTableIdForRoom(room: number): string {

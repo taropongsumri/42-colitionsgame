@@ -3,6 +3,8 @@
 import {
 	FLOORS,
 	TILE,
+	TOTAL_QUESTION_SLOTS,
+	QUESTIONS_PER_FLOOR,
 	floorForRoom,
 	questionTableIdForRoom,
 	type FloorMap,
@@ -29,15 +31,18 @@ const PET_LAG = 0.3;
 
 export interface Hud {
 	floor: number;
+	plug: number;
 	prompt: string | null;
 }
 
 export interface BossOption {
 	id: string;
+	floor: number;
 	name: string;
 	title: string;
 	question: string;
 	hp: number;
+	defeated?: boolean;
 }
 
 export interface Ghost {
@@ -45,14 +50,6 @@ export interface Ghost {
 	floor: number;
 	x: number;
 	y: number;
-}
-
-export interface Orb {
-	id: string;
-	floor: number;
-	x: number;
-	y: number;
-	visible: boolean;
 }
 
 export type GameOptions = {
@@ -66,8 +63,6 @@ export type GameOptions = {
 
 type Target = { floor: number; x: number; y: number };
 type GhostTrack = Ghost & { tx: number; ty: number; seen: number };
-type OrbTrack = Orb & { tx: number; ty: number; seen: number };
-const ORB_COLORS = ['#7ef9ff', '#ffe680', '#ff9de2', '#a6ff9e', '#c4b5fd', '#ffb27e'];
 
 function loadImage(src: string): HTMLImageElement {
 	const image = new Image();
@@ -109,16 +104,18 @@ export function createGame(options: GameOptions) {
 	const trail: { t: number; x: number; y: number }[] = [];
 	const keys = new Set<string>();
 	const ghosts = new Map<HouseId, GhostTrack>();
-	const orbs = new Map<string, OrbTrack>();
-	let orbsHidden = false;
 	const solved = new Set<string>();
 	let bossOptions: BossOption[] = [];
 	let bossSelected = 0;
 	let bossReady = false;
 	let bossActive = false;
+	let currentFloor = 1;
+	let currentPlug = 1;
+	let bossRetryAt: number | null = null;
 
 	let currentRoom = 1;
 	let highlight: string | null = questionTableIdForRoom(1);
+	let nextPlug: string | null = null;
 	let near: Prop | null = null;
 	let paused = false;
 	let running = true;
@@ -156,7 +153,7 @@ export function createGame(options: GameOptions) {
 	}
 
 	function emitHud(prompt: string | null) {
-		const hud = { floor: map.floor, prompt };
+		const hud = { floor: map.floor, plug: currentPlug, prompt };
 		const key = JSON.stringify(hud);
 		if (key !== lastHud) {
 			lastHud = key;
@@ -190,11 +187,6 @@ export function createGame(options: GameOptions) {
 			ghost.x += (ghost.tx - ghost.x) * ease;
 			ghost.y += (ghost.ty - ghost.y) * ease;
 		}
-		for (const orb of orbs.values()) {
-			orb.x += (orb.tx - orb.x) * ease;
-			orb.y += (orb.ty - orb.y) * ease;
-		}
-
 		if (fade) {
 			fade.t += dt;
 			if (!fade.switched && fade.t >= FADE) {
@@ -286,19 +278,30 @@ export function createGame(options: GameOptions) {
 		}
 
 		if (transport?.kind === 'elevator') {
-			if (!bossReady || !bossOptions.length) {
-				emitHud(bossReady ? 'Lift waiting for boss config' : 'Lift locked · clear every plug first');
+			const available = bossOptions.filter(
+				(boss) => boss.floor === currentFloor && !boss.defeated
+			);
+			if (!available.length) {
+				const defeated = bossOptions.some(
+					(boss) => boss.floor === currentFloor && boss.defeated
+				);
+				emitHud(
+					defeated
+						? 'Boss defeated · take the stairs up'
+						: bossReady
+							? 'Lift waiting for boss config'
+							: 'Lift locked · clear all six plugs first'
+				);
 				return;
 			}
-			const option = bossOptions[bossSelected % bossOptions.length];
-			const prompt = `E · Fight ${option.name}${bossOptions.length > 1 ? ` · Q · next (${bossSelected + 1}/${bossOptions.length})` : ''}`;
-			emitHud(prompt);
-			if (pressed === 'q' && bossOptions.length > 1) {
-				bossSelected = (bossSelected + 1) % bossOptions.length;
-				emitHud(`Boss selected · ${bossOptions[bossSelected].name}`);
-			} else if (pressed === 'e' && !bossActive) {
-				options.onEnterBoss?.(option.id);
+			if (bossRetryAt && bossRetryAt > Date.now()) {
+				const seconds = Math.ceil((bossRetryAt - Date.now()) / 1000);
+				emitHud(`Lift recharging · retry in ${seconds}s`);
+				return;
 			}
+			const option = available[bossSelected % available.length];
+			emitHud(`E · Fight ${option.name}`);
+			if (pressed === 'e' && !bossActive) options.onEnterBoss?.(option.id);
 			return;
 		}
 
@@ -313,10 +316,9 @@ export function createGame(options: GameOptions) {
 			y: Math.round(Math.max(0, Math.min(Math.max(0, worldHeight - view.h), pos.y - 16 - view.h / 2)))
 		};
 		const bob = walkT > 0 ? -Math.round(Math.abs(Math.sin(walkT * 12))) : 0;
-		const now = performance.now();
 		const actors: Actor[] = [];
 		for (const [id, ghost] of ghosts) {
-			if (ghost.floor !== map.floor || now - ghost.seen > 3000) continue;
+			if (ghost.floor !== map.floor || performance.now() - ghost.seen > 3000) continue;
 			// Full-colour teammate sprites, with a label so each house is easy to spot.
 			actors.push({
 				x: ghost.x,
@@ -325,17 +327,6 @@ export function createGame(options: GameOptions) {
 				bob: Math.round(Math.sin(t * 5 + id.length)),
 				name: HOUSES[id].name,
 				nameColor: HOUSES[id].color
-			});
-		}
-		for (const orb of orbs.values()) {
-			if (!orb.visible || orbsHidden || orb.floor !== map.floor || now - orb.seen > 4000) continue;
-			const color = ORB_COLORS[[...orb.id].reduce((sum, char) => sum + char.charCodeAt(0), 0) % ORB_COLORS.length];
-			actors.push({
-				x: orb.x,
-				y: orb.y,
-				img: null,
-				orb: color,
-				bob: Math.sin(t * 3 + orb.x) * 3
 			});
 		}
 		actors.push(
@@ -347,6 +338,7 @@ export function createGame(options: GameOptions) {
 			solved,
 			near: near?.roomId ?? null,
 			highlight,
+			next: nextPlug,
 			background: backgroundImage
 		});
 
@@ -402,13 +394,18 @@ export function createGame(options: GameOptions) {
 		},
 		setRoom(room: number) {
 			currentRoom = room;
-			highlight = questionTableIdForRoom(room);
-			const targetFloor = floorForRoom(room);
-			if (targetFloor !== map.floor) switchFloor(floorTarget(targetFloor, 'stairs'));
+			currentFloor = floorForRoom(room);
+			currentPlug = ((Math.max(1, room) - 1) % QUESTIONS_PER_FLOOR) + 1;
+			highlight = room <= TOTAL_QUESTION_SLOTS ? questionTableIdForRoom(room) : null;
+			nextPlug = null;
+			if (currentFloor !== map.floor) switchFloor(floorTarget(currentFloor, 'stairs'));
 		},
 		setSolved(ids: Iterable<string>) {
 			solved.clear();
 			for (const id of ids) solved.add(id);
+		},
+		setNextPlug(id: string | null) {
+			nextPlug = id;
 		},
 		setPaused(next: boolean) {
 			paused = next;
@@ -424,6 +421,9 @@ export function createGame(options: GameOptions) {
 		setBossActive(active: boolean) {
 			if (bossActive !== active) emitHud(null);
 			bossActive = active;
+		},
+		setBossRetryAt(at: number | null) {
+			bossRetryAt = at;
 		},
 		setGhosts(list: Ghost[]) {
 			const now = performance.now();
@@ -445,27 +445,6 @@ export function createGame(options: GameOptions) {
 			for (const id of [...ghosts.keys()]) {
 				if (!list.some((ghost) => ghost.house === id)) ghosts.delete(id);
 			}
-		},
-		setOrbs(list: Orb[]) {
-			const seen = performance.now();
-			for (const orb of list) {
-				const current = orbs.get(orb.id);
-				if (!current || current.floor !== orb.floor) {
-					orbs.set(orb.id, { ...orb, tx: orb.x, ty: orb.y, seen });
-				} else {
-					current.tx = orb.x;
-					current.ty = orb.y;
-					current.floor = orb.floor;
-					current.visible = orb.visible;
-					current.seen = seen;
-				}
-			}
-			for (const id of [...orbs.keys()]) {
-				if (!list.some((orb) => orb.id === id)) orbs.delete(id);
-			}
-		},
-		setOrbsHidden(hidden: boolean) {
-			orbsHidden = hidden;
 		},
 		get running() {
 			return running;

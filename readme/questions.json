@@ -1,13 +1,14 @@
 {
   "meta": {
-    "title": "General Knowledge Quiz",
-    "totalQuestions": 30,
+    "title": "Coalition Backrooms Question Bank",
+    "totalQuestions": 90,
     "difficultyTarget": "about 70% of people know the answer",
     "categories": {
-      "computer": 15,
-      "math": 8,
-      "science": 7
+      "network": 45,
+      "sport": 15,
+      "general": 30
     },
+    "distribution": "Each of the three houses draws 15 network, 5 sport, and 10 general questions, with no overlap between houses.",
     "matching": {
       "caseSensitive": false,
       "trimWhitespace": true,
@@ -21,213 +22,633 @@
   "questions": [
     {
       "id": "q001",
-      "category": "computer",
-      "question": "What does RAM stand for?",
-      "answer": "Random Access Memory",
-      "accepted_answers": ["RAM", "Random Access Memory", "random access memory", "ram"]
+      "category": "network",
+      "question": "What does DNS stand for?",
+      "answer": "Domain Name System",
+      "accepted_answers": ["DNS", "Domain Name System", "domain name system", "Domain Name Service"]
     },
     {
       "id": "q002",
-      "category": "computer",
-      "question": "What does CPU stand for?",
-      "answer": "Central Processing Unit",
-      "accepted_answers": ["CPU", "Central Processing Unit", "central processing unit", "cpu"]
+      "category": "network",
+      "question": "What does IP stand for?",
+      "answer": "Internet Protocol",
+      "accepted_answers": ["IP", "Internet Protocol", "internet protocol", "IP protocol"]
     },
     {
       "id": "q003",
-      "category": "computer",
-      "question": "What is the binary representation of the decimal number 10?",
-      "answer": "1010",
-      "accepted_answers": ["1010", "binary 1010", "0b1010"]
-    },
-    {
-      "id": "q004",
-      "category": "computer",
-      "question": "Who is commonly credited as the first computer programmer?",
-      "answer": "Ada Lovelace",
-      "accepted_answers": ["Ada Lovelace", "ada lovelace", "Ada Byron", "Lady Lovelace"]
-    },
-    {
-      "id": "q005",
-      "category": "computer",
-      "question": "What does URL stand for?",
-      "answer": "Uniform Resource Locator",
-      "accepted_answers": ["URL", "Uniform Resource Locator", "uniform resource locator", "url"]
-    },
-    {
-      "id": "q006",
-      "category": "computer",
-      "question": "What is the main job of a GPU?",
-      "answer": "Rendering graphics / parallel processing",
-      "accepted_answers": ["GPU", "Graphics Processing Unit", "graphics card", "rendering graphics", "parallel processing", "processing graphics"]
-    },
-    {
-      "id": "q007",
-      "category": "computer",
-      "question": "What is phishing?",
-      "answer": "A scam that tricks people into revealing sensitive information",
-      "accepted_answers": ["phishing", "phishing attack", "phishing scam", "a scam to steal passwords or personal information", "fake emails or sites to steal information"]
-    },
-    {
-      "id": "q008",
-      "category": "computer",
-      "question": "Who created the Linux kernel?",
-      "answer": "Linus Torvalds",
-      "accepted_answers": ["Linus Torvalds", "linus torvalds", "Linus"]
-    },
-    {
-      "id": "q009",
-      "category": "computer",
-      "question": "What is the primary language used to add interactivity to web pages?",
-      "answer": "JavaScript",
-      "accepted_answers": ["JavaScript", "javascript", "JS", "js"]
-    },
-    {
-      "id": "q010",
-      "category": "computer",
-      "question": "What does a firewall do?",
-      "answer": "Monitors and controls network traffic based on security rules",
-      "accepted_answers": ["firewall", "a firewall", "blocks unauthorized network traffic", "monitors and controls network traffic", "protects a network from unauthorized access"]
-    },
-    {
-      "id": "q011",
-      "category": "computer",
+      "category": "network",
       "question": "What does HTTP stand for?",
       "answer": "HyperText Transfer Protocol",
       "accepted_answers": ["HTTP", "HyperText Transfer Protocol", "Hypertext Transfer Protocol", "http"]
     },
     {
+      "id": "q004",
+      "category": "network",
+      "question": "What does URL stand for?",
+      "answer": "Uniform Resource Locator",
+      "accepted_answers": ["URL", "Uniform Resource Locator", "uniform resource locator", "url"]
+    },
+    {
+      "id": "q005",
+      "category": "network",
+      "question": "What does LAN stand for?",
+      "answer": "Local Area Network",
+      "accepted_answers": ["LAN", "Local Area Network", "local area network", "lan"]
+    },
+    {
+      "id": "q006",
+      "category": "network",
+      "question": "What does WAN stand for?",
+      "answer": "Wide Area Network",
+      "accepted_answers": ["WAN", "Wide Area Network", "wide area network", "wan"]
+    },
+    {
+      "id": "q007",
+      "category": "network",
+      "question": "What does TCP stand for?",
+      "answer": "Transmission Control Protocol",
+      "accepted_answers": ["TCP", "Transmission Control Protocol", "transmission control protocol", "tcp"]
+    },
+    {
+      "id": "q008",
+      "category": "network",
+      "question": "What does UDP stand for?",
+      "answer": "User Datagram Protocol",
+      "accepted_answers": ["UDP", "User Datagram Protocol", "user datagram protocol", "udp"]
+    },
+    {
+      "id": "q009",
+      "category": "network",
+      "question": "What does FTP stand for?",
+      "answer": "File Transfer Protocol",
+      "accepted_answers": ["FTP", "File Transfer Protocol", "file transfer protocol", "ftp"]
+    },
+    {
+      "id": "q010",
+      "category": "network",
+      "question": "What does SSH stand for?",
+      "answer": "Secure Shell",
+      "accepted_answers": ["SSH", "Secure Shell", "secure shell", "ssh"]
+    },
+    {
+      "id": "q011",
+      "category": "network",
+      "question": "What does DHCP stand for?",
+      "answer": "Dynamic Host Configuration Protocol",
+      "accepted_answers": ["DHCP", "Dynamic Host Configuration Protocol", "dynamic host configuration protocol", "dhcp"]
+    },
+    {
       "id": "q012",
-      "category": "computer",
-      "question": "What is the name for a reusable piece of code that takes inputs and returns an output?",
-      "answer": "A function",
-      "accepted_answers": ["function", "a function", "subroutine", "procedure", "method"]
+      "category": "network",
+      "question": "What does NAT stand for?",
+      "answer": "Network Address Translation",
+      "accepted_answers": ["NAT", "Network Address Translation", "network address translation", "nat"]
     },
     {
       "id": "q013",
-      "category": "computer",
-      "question": "What does AI stand for?",
-      "answer": "Artificial Intelligence",
-      "accepted_answers": ["AI", "Artificial Intelligence", "artificial intelligence", "ai"]
+      "category": "network",
+      "question": "What does VPN stand for?",
+      "answer": "Virtual Private Network",
+      "accepted_answers": ["VPN", "Virtual Private Network", "virtual private network", "vpn"]
     },
     {
       "id": "q014",
-      "category": "computer",
-      "question": "What is the term for a copy of data kept in case the original is lost?",
-      "answer": "A backup",
-      "accepted_answers": ["backup", "a backup", "back up", "data backup", "a copy of the data"]
+      "category": "network",
+      "question": "What does ISP stand for?",
+      "answer": "Internet Service Provider",
+      "accepted_answers": ["ISP", "Internet Service Provider", "internet service provider", "isp"]
     },
     {
       "id": "q015",
-      "category": "computer",
-      "question": "What company develops the Windows operating system?",
-      "answer": "Microsoft",
-      "accepted_answers": ["Microsoft", "microsoft", "MS"]
+      "category": "network",
+      "question": "What does MAC stand for in networking?",
+      "answer": "Media Access Control",
+      "accepted_answers": ["MAC", "Media Access Control", "media access control", "mac"]
     },
     {
       "id": "q016",
-      "category": "math",
-      "question": "What is 15% of 200?",
-      "answer": "30",
-      "accepted_answers": ["30", "thirty"]
+      "category": "network",
+      "question": "What does SSL stand for?",
+      "answer": "Secure Sockets Layer",
+      "accepted_answers": ["SSL", "Secure Sockets Layer", "secure sockets layer", "ssl"]
     },
     {
       "id": "q017",
-      "category": "math",
-      "question": "What is the formula for the area of a circle?",
-      "answer": "πr²",
-      "accepted_answers": ["πr²", "pi r squared", "π r^2", "pi * r^2", "area = πr²", "pi r^2"]
+      "category": "network",
+      "question": "What does TLS stand for?",
+      "answer": "Transport Layer Security",
+      "accepted_answers": ["TLS", "Transport Layer Security", "transport layer security", "tls"]
     },
     {
       "id": "q018",
-      "category": "math",
-      "question": "In a right triangle, what does the Pythagorean theorem state?",
-      "answer": "a² + b² = c²",
-      "accepted_answers": ["a² + b² = c²", "a^2 + b^2 = c^2", "a squared plus b squared equals c squared", "a²+b²=c²"]
+      "category": "network",
+      "question": "What does VLAN stand for?",
+      "answer": "Virtual Local Area Network",
+      "accepted_answers": ["VLAN", "Virtual Local Area Network", "virtual local area network", "vlan"]
     },
     {
       "id": "q019",
-      "category": "math",
-      "question": "What is the value of π (pi) to two decimal places?",
-      "answer": "3.14",
-      "accepted_answers": ["3.14", "pi = 3.14", "3,14"]
+      "category": "network",
+      "question": "What does HTML stand for?",
+      "answer": "HyperText Markup Language",
+      "accepted_answers": ["HTML", "HyperText Markup Language", "Hypertext Markup Language", "html"]
     },
     {
       "id": "q020",
-      "category": "math",
-      "question": "A triangle has angles of 60° and 70°. What is the third angle?",
-      "answer": "50°",
-      "accepted_answers": ["50", "50°", "50 degrees", "fifty degrees"]
+      "category": "network",
+      "question": "What does API stand for?",
+      "answer": "Application Programming Interface",
+      "accepted_answers": ["API", "Application Programming Interface", "application programming interface", "api"]
     },
     {
       "id": "q021",
-      "category": "math",
-      "question": "What is 2⁵?",
-      "answer": "32",
-      "accepted_answers": ["32", "thirty-two", "thirty two"]
+      "category": "network",
+      "question": "What does JSON stand for?",
+      "answer": "JavaScript Object Notation",
+      "accepted_answers": ["JSON", "JavaScript Object Notation", "javascript object notation", "json"]
     },
     {
       "id": "q022",
-      "category": "math",
-      "question": "What is the average (mean) of 4, 8, and 12?",
-      "answer": "8",
-      "accepted_answers": ["8", "eight", "8.0"]
+      "category": "network",
+      "question": "What does WWW stand for?",
+      "answer": "World Wide Web",
+      "accepted_answers": ["WWW", "World Wide Web", "world wide web", "www"]
     },
     {
       "id": "q023",
-      "category": "math",
-      "question": "What is the sum of the interior angles of a quadrilateral?",
-      "answer": "360°",
-      "accepted_answers": ["360", "360°", "360 degrees", "three hundred sixty degrees"]
+      "category": "network",
+      "question": "What does OSI stand for?",
+      "answer": "Open Systems Interconnection",
+      "accepted_answers": ["OSI", "Open Systems Interconnection", "open systems interconnection", "OSI model"]
     },
     {
       "id": "q024",
-      "category": "science",
+      "category": "network",
+      "question": "What does ICANN stand for?",
+      "answer": "Internet Corporation for Assigned Names and Numbers",
+      "accepted_answers": ["ICANN", "Internet Corporation for Assigned Names and Numbers", "internet corporation for assigned names and numbers", "icann"]
+    },
+    {
+      "id": "q025",
+      "category": "network",
+      "question": "What device connects a home network to the internet?",
+      "answer": "Router",
+      "accepted_answers": ["Router", "router", "a router", "network router"]
+    },
+    {
+      "id": "q026",
+      "category": "network",
+      "question": "What device connects computers within one local network?",
+      "answer": "Switch",
+      "accepted_answers": ["Switch", "switch", "network switch", "a switch"]
+    },
+    {
+      "id": "q027",
+      "category": "network",
+      "question": "Which protocol is used to send email?",
+      "answer": "SMTP",
+      "accepted_answers": ["SMTP", "smtp", "Simple Mail Transfer Protocol", "simple mail transfer protocol"]
+    },
+    {
+      "id": "q028",
+      "category": "network",
+      "question": "Which protocol securely delivers web pages?",
+      "answer": "HTTPS",
+      "accepted_answers": ["HTTPS", "https", "HyperText Transfer Protocol Secure", "HTTP Secure"]
+    },
+    {
+      "id": "q029",
+      "category": "network",
+      "question": "What is the default port for HTTP?",
+      "answer": "80",
+      "accepted_answers": ["80", "port 80", "eighty", "80 port"]
+    },
+    {
+      "id": "q030",
+      "category": "network",
+      "question": "What is the default port for HTTPS?",
+      "answer": "443",
+      "accepted_answers": ["443", "port 443", "four forty-three", "443 port"]
+    },
+    {
+      "id": "q031",
+      "category": "network",
+      "question": "What is the basic unit of data sent over a network?",
+      "answer": "Packet",
+      "accepted_answers": ["Packet", "packet", "a packet", "data packet"]
+    },
+    {
+      "id": "q032",
+      "category": "network",
+      "question": "What address identifies a device on a network?",
+      "answer": "IP address",
+      "accepted_answers": ["IP address", "ip address", "Internet address", "IP"]
+    },
+    {
+      "id": "q033",
+      "category": "network",
+      "question": "What is a device's hardware network address called?",
+      "answer": "MAC address",
+      "accepted_answers": ["MAC address", "mac address", "Media Access Control address", "hardware address"]
+    },
+    {
+      "id": "q034",
+      "category": "network",
+      "question": "Which protocol retrieves email from a mail server?",
+      "answer": "IMAP",
+      "accepted_answers": ["IMAP", "imap", "Internet Message Access Protocol", "internet message access protocol"]
+    },
+    {
+      "id": "q035",
+      "category": "network",
+      "question": "How many bits are in an IPv4 address?",
+      "answer": "32",
+      "accepted_answers": ["32", "32 bits", "thirty-two", "thirty two"]
+    },
+    {
+      "id": "q036",
+      "category": "network",
+      "question": "How many bits are in an IPv6 address?",
+      "answer": "128",
+      "accepted_answers": ["128", "128 bits", "one hundred twenty-eight", "one hundred and twenty-eight"]
+    },
+    {
+      "id": "q037",
+      "category": "network",
+      "question": "What is the name for the global network of networks?",
+      "answer": "Internet",
+      "accepted_answers": ["Internet", "internet", "the Internet", "the internet"]
+    },
+    {
+      "id": "q038",
+      "category": "network",
+      "question": "Which command checks whether another host is reachable?",
+      "answer": "Ping",
+      "accepted_answers": ["Ping", "ping", "ping command", "a ping"]
+    },
+    {
+      "id": "q039",
+      "category": "network",
+      "question": "Which layer of the OSI model handles routing?",
+      "answer": "Network layer",
+      "accepted_answers": ["Network layer", "network layer", "Layer 3", "layer 3"]
+    },
+    {
+      "id": "q040",
+      "category": "network",
+      "question": "What does DNS convert?",
+      "answer": "Domain names to IP addresses",
+      "accepted_answers": ["Domain names to IP addresses", "domain names to IP addresses", "names to IP addresses", "hostnames to IP addresses"]
+    },
+    {
+      "id": "q041",
+      "category": "network",
+      "question": "What is the common name for wireless networking technology?",
+      "answer": "Wi-Fi",
+      "accepted_answers": ["Wi-Fi", "WiFi", "wi-fi", "wifi"]
+    },
+    {
+      "id": "q042",
+      "category": "network",
+      "question": "What type of cable is most common for wired local networks?",
+      "answer": "Ethernet",
+      "accepted_answers": ["Ethernet", "ethernet", "Ethernet cable", "ethernet cable"]
+    },
+    {
+      "id": "q043",
+      "category": "network",
+      "question": "What is the main job of a firewall?",
+      "answer": "Filters network traffic",
+      "accepted_answers": ["Filters network traffic", "filters network traffic", "Blocks unauthorized traffic", "Controls network traffic"]
+    },
+    {
+      "id": "q044",
+      "category": "network",
+      "question": "What is a network covering a small geographic area called?",
+      "answer": "LAN",
+      "accepted_answers": ["LAN", "lan", "Local Area Network", "local area network"]
+    },
+    {
+      "id": "q045",
+      "category": "network",
+      "question": "Which protocol is used for secure file transfer?",
+      "answer": "SFTP",
+      "accepted_answers": ["SFTP", "sftp", "SSH File Transfer Protocol", "Secure FTP"]
+    },
+    {
+      "id": "q046",
+      "category": "sport",
+      "question": "How many players are on a soccer team on the field?",
+      "answer": "11",
+      "accepted_answers": ["11", "eleven", "11 players", "eleven players"]
+    },
+    {
+      "id": "q047",
+      "category": "sport",
+      "question": "How many rings are on the Olympic flag?",
+      "answer": "5",
+      "accepted_answers": ["5", "five", "5 rings", "five rings"]
+    },
+    {
+      "id": "q048",
+      "category": "sport",
+      "question": "In which sport is a hole in one possible?",
+      "answer": "Golf",
+      "accepted_answers": ["Golf", "golf", "golfing", "the sport of golf"]
+    },
+    {
+      "id": "q049",
+      "category": "sport",
+      "question": "How many players are on a basketball team on the court?",
+      "answer": "5",
+      "accepted_answers": ["5", "five", "5 players", "five players"]
+    },
+    {
+      "id": "q050",
+      "category": "sport",
+      "question": "What sport uses a racket and a small ball on a table?",
+      "answer": "Table tennis",
+      "accepted_answers": ["Table tennis", "table tennis", "Ping pong", "ping pong"]
+    },
+    {
+      "id": "q051",
+      "category": "sport",
+      "question": "What is the distance of a standard marathon in kilometers?",
+      "answer": "42.195",
+      "accepted_answers": ["42.195", "42.2", "42 kilometers", "forty-two kilometers"]
+    },
+    {
+      "id": "q052",
+      "category": "sport",
+      "question": "How many innings are in a standard baseball game?",
+      "answer": "9",
+      "accepted_answers": ["9", "nine", "9 innings", "nine innings"]
+    },
+    {
+      "id": "q053",
+      "category": "sport",
+      "question": "What is the championship game of American football called?",
+      "answer": "Super Bowl",
+      "accepted_answers": ["Super Bowl", "super bowl", "the Super Bowl", "the super bowl"]
+    },
+    {
+      "id": "q054",
+      "category": "sport",
+      "question": "In tennis, what is a score of zero called?",
+      "answer": "Love",
+      "accepted_answers": ["Love", "love", "zero", "love zero"]
+    },
+    {
+      "id": "q055",
+      "category": "sport",
+      "question": "Which country won the 2018 FIFA World Cup?",
+      "answer": "France",
+      "accepted_answers": ["France", "france", "French team", "the French"]
+    },
+    {
+      "id": "q056",
+      "category": "sport",
+      "question": "How often are the Summer Olympics held?",
+      "answer": "Every four years",
+      "accepted_answers": ["Every four years", "every four years", "Four years", "4 years"]
+    },
+    {
+      "id": "q057",
+      "category": "sport",
+      "question": "What is the most popular ball sport in the world?",
+      "answer": "Football",
+      "accepted_answers": ["Football", "football", "Soccer", "soccer"]
+    },
+    {
+      "id": "q058",
+      "category": "sport",
+      "question": "What is a perfect 300 game in bowling called?",
+      "answer": "Perfect game",
+      "accepted_answers": ["Perfect game", "perfect game", "300 game", "a perfect game"]
+    },
+    {
+      "id": "q059",
+      "category": "sport",
+      "question": "In golf, what is one stroke under par called?",
+      "answer": "Birdie",
+      "accepted_answers": ["Birdie", "birdie", "one under par", "a birdie"]
+    },
+    {
+      "id": "q060",
+      "category": "sport",
+      "question": "Which winter sport uses a puck and ice skates?",
+      "answer": "Ice hockey",
+      "accepted_answers": ["Ice hockey", "ice hockey", "Hockey", "hockey"]
+    },
+    {
+      "id": "q061",
+      "category": "general",
+      "question": "What is the largest ocean on Earth?",
+      "answer": "Pacific Ocean",
+      "accepted_answers": ["Pacific Ocean", "pacific ocean", "Pacific", "pacific"]
+    },
+    {
+      "id": "q062",
+      "category": "general",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "accepted_answers": ["Paris", "paris", "City of Paris", "the city of Paris"]
+    },
+    {
+      "id": "q063",
+      "category": "general",
+      "question": "How many continents are there?",
+      "answer": "7",
+      "accepted_answers": ["7", "seven", "7 continents", "seven continents"]
+    },
+    {
+      "id": "q064",
+      "category": "general",
+      "question": "What is the largest mammal?",
+      "answer": "Blue whale",
+      "accepted_answers": ["Blue whale", "blue whale", "the blue whale", "blue whales"]
+    },
+    {
+      "id": "q065",
+      "category": "general",
       "question": "What is the chemical symbol for gold?",
       "answer": "Au",
       "accepted_answers": ["Au", "AU", "au", "gold"]
     },
     {
-      "id": "q025",
-      "category": "science",
+      "id": "q066",
+      "category": "general",
       "question": "What gas do plants absorb during photosynthesis?",
       "answer": "Carbon dioxide",
-      "accepted_answers": ["Carbon dioxide", "carbon dioxide", "CO2", "CO₂", "co2"]
+      "accepted_answers": ["Carbon dioxide", "carbon dioxide", "CO2", "co2"]
     },
     {
-      "id": "q026",
-      "category": "science",
-      "question": "What is the largest planet in our solar system?",
+      "id": "q067",
+      "category": "general",
+      "question": "What is the largest planet in the solar system?",
       "answer": "Jupiter",
-      "accepted_answers": ["Jupiter", "jupiter"]
+      "accepted_answers": ["Jupiter", "jupiter", "planet Jupiter", "the largest planet"]
     },
     {
-      "id": "q027",
-      "category": "science",
+      "id": "q068",
+      "category": "general",
       "question": "What is the human body's largest organ?",
       "answer": "Skin",
-      "accepted_answers": ["Skin", "skin", "the skin"]
+      "accepted_answers": ["Skin", "skin", "the skin", "human skin"]
     },
     {
-      "id": "q028",
-      "category": "science",
+      "id": "q069",
+      "category": "general",
+      "question": "What is the boiling point of water in degrees Celsius?",
+      "answer": "100",
+      "accepted_answers": ["100", "100 degrees Celsius", "100 C", "one hundred"]
+    },
+    {
+      "id": "q070",
+      "category": "general",
+      "question": "What is the freezing point of water in degrees Celsius?",
+      "answer": "0",
+      "accepted_answers": ["0", "zero", "0 degrees Celsius", "0 C"]
+    },
+    {
+      "id": "q071",
+      "category": "general",
       "question": "What is the chemical symbol for iron?",
       "answer": "Fe",
       "accepted_answers": ["Fe", "FE", "fe", "iron"]
     },
     {
-      "id": "q029",
-      "category": "science",
+      "id": "q072",
+      "category": "general",
       "question": "Which part of a cell contains most of its DNA?",
-      "answer": "The nucleus",
-      "accepted_answers": ["nucleus", "The nucleus", "cell nucleus", "the nucleus"]
+      "answer": "Nucleus",
+      "accepted_answers": ["Nucleus", "nucleus", "the nucleus", "cell nucleus"]
     },
     {
-      "id": "q030",
-      "category": "science",
-      "question": "What is the process called when liquid water turns into water vapor?",
+      "id": "q073",
+      "category": "general",
+      "question": "What is the process of liquid water turning into vapor called?",
       "answer": "Evaporation",
       "accepted_answers": ["Evaporation", "evaporation", "evaporating", "vaporization"]
+    },
+    {
+      "id": "q074",
+      "category": "general",
+      "question": "Which planet is nearest to the Sun?",
+      "answer": "Mercury",
+      "accepted_answers": ["Mercury", "mercury", "planet Mercury", "the planet Mercury"]
+    },
+    {
+      "id": "q075",
+      "category": "general",
+      "question": "What is the largest hot desert in the world?",
+      "answer": "Sahara",
+      "accepted_answers": ["Sahara", "sahara", "Sahara Desert", "sahara desert"]
+    },
+    {
+      "id": "q076",
+      "category": "general",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Leonardo da Vinci",
+      "accepted_answers": ["Leonardo da Vinci", "Leonardo", "da Vinci", "Leonardo da vinci"]
+    },
+    {
+      "id": "q077",
+      "category": "general",
+      "question": "What is the capital of Japan?",
+      "answer": "Tokyo",
+      "accepted_answers": ["Tokyo", "tokyo", "Tokyo Japan", "city of Tokyo"]
+    },
+    {
+      "id": "q078",
+      "category": "general",
+      "question": "How many colors are in a rainbow?",
+      "answer": "7",
+      "accepted_answers": ["7", "seven", "7 colors", "seven colours"]
+    },
+    {
+      "id": "q079",
+      "category": "general",
+      "question": "What is the hardest natural substance?",
+      "answer": "Diamond",
+      "accepted_answers": ["Diamond", "diamond", "a diamond", "diamonds"]
+    },
+    {
+      "id": "q080",
+      "category": "general",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "accepted_answers": ["Mars", "mars", "planet Mars", "the red planet"]
+    },
+    {
+      "id": "q081",
+      "category": "general",
+      "question": "What is Earth's natural satellite called?",
+      "answer": "Moon",
+      "accepted_answers": ["Moon", "moon", "the Moon", "the moon"]
+    },
+    {
+      "id": "q082",
+      "category": "general",
+      "question": "Who wrote Romeo and Juliet?",
+      "answer": "William Shakespeare",
+      "accepted_answers": ["William Shakespeare", "william shakespeare", "Shakespeare", "shakespeare"]
+    },
+    {
+      "id": "q083",
+      "category": "general",
+      "question": "What is the largest island in the world?",
+      "answer": "Greenland",
+      "accepted_answers": ["Greenland", "greenland", "Greenland island", "the island of Greenland"]
+    },
+    {
+      "id": "q084",
+      "category": "general",
+      "question": "Which organ pumps blood through the body?",
+      "answer": "Heart",
+      "accepted_answers": ["Heart", "heart", "the heart", "human heart"]
+    },
+    {
+      "id": "q085",
+      "category": "general",
+      "question": "What is the main source of energy for Earth?",
+      "answer": "Sun",
+      "accepted_answers": ["Sun", "sun", "the Sun", "the sun"]
+    },
+    {
+      "id": "q086",
+      "category": "general",
+      "question": "Which gas makes up most of Earth's atmosphere?",
+      "answer": "Nitrogen",
+      "accepted_answers": ["Nitrogen", "nitrogen", "N2", "nitrogen gas"]
+    },
+    {
+      "id": "q087",
+      "category": "general",
+      "question": "How many bones are in the adult human body?",
+      "answer": "206",
+      "accepted_answers": ["206", "two hundred six", "two hundred and six", "206 bones"]
+    },
+    {
+      "id": "q088",
+      "category": "general",
+      "question": "What is the currency of the United Kingdom?",
+      "answer": "Pound sterling",
+      "accepted_answers": ["Pound sterling", "pound sterling", "Pound", "GBP"]
+    },
+    {
+      "id": "q089",
+      "category": "general",
+      "question": "What is the tallest mountain above sea level?",
+      "answer": "Mount Everest",
+      "accepted_answers": ["Mount Everest", "mount everest", "Everest", "everest"]
+    },
+    {
+      "id": "q090",
+      "category": "general",
+      "question": "What is the study of fossils called?",
+      "answer": "Paleontology",
+      "accepted_answers": ["Paleontology", "paleontology", "Palaeontology", "palaeontology"]
     }
   ]
 }

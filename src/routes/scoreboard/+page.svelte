@@ -2,7 +2,15 @@
 	import { onMount } from 'svelte';
 	import { HOUSES, HOUSE_IDS, type HouseId } from '$lib/shared/types';
 
-	type Row = { house: HouseId; score: number; room: number; hp: number; solved: number };
+	type Row = {
+		house: HouseId;
+		score: number;
+		room: number;
+		floor: number;
+		plug: number;
+		hp: number;
+		solved: number;
+	};
 	type Data = {
 		rows: Row[];
 		timeLeftMs: number;
@@ -48,18 +56,19 @@
 {#if data?.announcement}<p class="announce">{data.announcement}</p>{/if}
 
 <table>
-	<thead><tr><th>House</th><th>Score</th><th>Room</th><th>HP</th></tr></thead>
+	<thead><tr><th>House</th><th>Score</th><th>Floor</th><th>Plug</th><th>HP</th></tr></thead>
 	<tbody>
 		{#each sorted as row, index (row.house)}
 			<tr>
 				<td style:color={HOUSES[row.house].color}>{index + 1}. {HOUSES[row.house].name}</td>
 				<td>{row.score}</td>
-				<td>{row.room}</td>
+				<td>{row.floor}</td>
+				<td>{row.plug}</td>
 				<td>{row.hp}</td>
 			</tr>
 		{/each}
 		{#if !data}
-			<tr><td colspan="4">Loading…</td></tr>
+			<tr><td colspan="5">Loading…</td></tr>
 		{/if}
 	</tbody>
 </table>

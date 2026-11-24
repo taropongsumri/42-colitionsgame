@@ -79,6 +79,9 @@ export class MemoryStore implements Store {
 			for (const house of Object.values(this.state.houses)) {
 				house.solvedRooms ??= [];
 				house.lastClearAt ??= null;
+				house.questionOrder ??= [];
+				house.defeatedBosses ??= [];
+				house.bossRetryAt ??= null;
 				house.boss = emptyBoss(house.boss ?? {});
 			}
 		} catch {

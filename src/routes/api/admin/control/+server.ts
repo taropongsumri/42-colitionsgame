@@ -13,6 +13,7 @@ const actions: ControlInput['action'][] = [
 	'adjustScore',
 	'forceUnlock',
 	'forceBoss',
+	'clearBossRetry',
 	'announce',
 	'hideOrbs',
 	'end'

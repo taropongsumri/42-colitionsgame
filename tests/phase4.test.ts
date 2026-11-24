@@ -26,7 +26,7 @@ describe('phase 4 admin infrastructure', () => {
 		await store.replaceQuestions([
 			{
 				id: 'p4-1',
-				category: 'computer',
+				category: 'general',
 				question: 'Phase four question?',
 				answer: 'secret-answer',
 				acceptedAnswers: ['secret-answer'],
@@ -69,11 +69,11 @@ describe('phase 4 admin infrastructure', () => {
 
 	test('config history records live config changes', async () => {
 		const store = await getStore();
-		await store.setConfig({ game: { roomCount: 11 } }, 'phase4-test');
+		await store.setConfig({ game: { floorCount: 11 } }, 'phase4-test');
 		const history = await store.getConfigHistory();
 		expect(history.length).toBeGreaterThan(0);
 		expect(history.at(-1)!.by).toBe('phase4-test');
-		expect(history.at(-1)!.value).toEqual({ game: { roomCount: 11 } });
+		expect(history.at(-1)!.value).toEqual({ game: { floorCount: 11 } });
 	});
 });
 

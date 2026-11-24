@@ -2,10 +2,11 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy, onMount } from 'svelte';
 	import { advanceBossWords } from '$lib/client/bossWords';
-	import { createGame, type BossOption, type Ghost, type Hud, type Orb } from '$lib/client/game';
+	import { createGame, type BossOption, type Ghost, type Hud } from '$lib/client/game';
+	import BossCutscene from '$lib/components/game/BossCutscene.svelte';
 	import BossFight from '$lib/components/game/BossFight.svelte';
 	import Terminal from '$lib/components/game/Terminal.svelte';
-	import { realTableFor } from '$lib/shared/dungeon';
+	import { floorAndPlug, questionTableIdForRoom } from '$lib/shared/map';
 	import { HOUSES, HOUSE_IDS, type HouseId } from '$lib/shared/types';
 
 	type Session = { token: string; code: string; house: HouseId | null; accepted: boolean };
@@ -17,10 +18,12 @@
 		solvedRooms: number[];
 		answerLockUntil: number | null;
 		status: string;
+		defeatedBosses?: string[];
+		bossRetryAt?: number | null;
 		boss?: { active: boolean; hp: number; maxHp: number };
 	};
 	type Scoreboard = {
-		rows: { house: HouseId; score: number; room: number; hp: number }[];
+		rows: { house: HouseId; score: number; room: number; floor: number; plug: number; hp: number }[];
 		timeLeftMs: number;
 		paused: boolean;
 		announcement: string | null;
@@ -56,16 +59,24 @@
 	let socketStatus = 'connecting…';
 	let state: HouseState | null = null;
 	let rooms: { number: number; status: string }[] = [];
-	let shadows: { house: HouseId; room: number; connected: boolean }[] = [];
+	let shadows: {
+		house: HouseId;
+		room: number;
+		floor: number;
+		plug: number;
+		connected: boolean;
+	}[] = [];
 	let scoreboard: Scoreboard | null = null;
 	let terminal: { prompt: string; hint: string | null } | null = null;
-	let hud: Hud = { floor: 1, prompt: null };
+	let hud: Hud = { floor: 1, plug: 1, prompt: null };
 	let feedback = '';
 	let terminalRoomId: string | null = null;
 	let terminalSolved = false;
 	let notice = '';
 	let lockUntil: number | null = null;
 	let bossOptions: BossOption[] = [];
+	let cutscene: BossOption | null = null;
+	let cutsceneTimer: ReturnType<typeof setTimeout> | null = null;
 	let boss: BossView | null = null;
 	let bossFeedback = '';
 	let wordPulse = 0;
@@ -102,7 +113,7 @@
 	}
 
 	function submit(value: string) {
-		const roomId = terminalRoomId ?? realTableFor(house, state?.room ?? 1);
+		const roomId = terminalRoomId ?? questionTableIdForRoom(state?.room ?? 1);
 		if (!value.trim() || lockRemaining > 0 || terminalSolved) return;
 		send({ type: 'answer', roomId, answer: value });
 	}
@@ -129,6 +140,12 @@
 		victoryTimer = null;
 	}
 
+	function clearCutsceneTimer() {
+		if (!cutsceneTimer) return;
+		clearTimeout(cutsceneTimer);
+		cutsceneTimer = null;
+	}
+
 	function dismissBoss() {
 		clearVictoryTimer();
 		boss = null;
@@ -139,9 +156,40 @@
 	}
 
 	function enterBoss(bossId: string) {
-		if (state && rooms.length && state.solvedRooms.length < rooms.length) return;
+		if (cutscene) return;
+		const option = bossOptions.find((entry) => entry.id === bossId);
+		if (!option || option.defeated) return;
+		if (state && state.status !== 'boss' && !state.defeatedBosses?.includes(bossId)) {
+			const cleared = state.solvedRooms.filter(
+				(room) => floorAndPlug(room).floor === option.floor
+			).length;
+			if (cleared < 6) return;
+		}
 		clearVictoryTimer();
+		clearCutsceneTimer();
 		game?.setPaused(true);
+		cutscene = option;
+		cutsceneTimer = setTimeout(() => {
+			clearCutsceneTimer();
+			cutscene = null;
+			bossFeedback = '';
+			wordPulse = 0;
+			attackPulse = 0;
+			deathPulse = 0;
+			comboBreakPulse = 0;
+			lastFinisherDamage = 0;
+			lastFinisherPercent = 0;
+			lastFinisherTier = 0;
+			victoryPulse = 0;
+			lastChip = 0;
+			send({ type: 'enterBoss', bossId });
+		}, 1800);
+	}
+
+	function finishCutscene() {
+		const bossId = cutscene?.id;
+		clearCutsceneTimer();
+		cutscene = null;
 		bossFeedback = '';
 		wordPulse = 0;
 		attackPulse = 0;
@@ -152,8 +200,7 @@
 		lastFinisherTier = 0;
 		victoryPulse = 0;
 		lastChip = 0;
-		startBossAudio();
-		send({ type: 'enterBoss', bossId });
+		if (bossId) send({ type: 'enterBoss', bossId });
 	}
 
 	function closeBoss() {
@@ -163,6 +210,7 @@
 
 	onDestroy(() => {
 		clearVictoryTimer();
+		clearCutsceneTimer();
 		stopBossAudio();
 	});
 
@@ -210,14 +258,18 @@
 						state = message.state as HouseState;
 						lockUntil = state.answerLockUntil;
 						game?.setRoom(state.room);
-						game?.setSolved(state.solvedRooms.map((room) => realTableFor(house, room)));
-						game?.setBossReady(rooms.length > 0 && state.solvedRooms.length >= rooms.length);
+						game?.setSolved(
+							state.solvedRooms.map((room) => questionTableIdForRoom(room))
+						);
+						game?.setNextPlug(null);
+						game?.setBossReady(state.status === 'boss');
 						game?.setBossActive(Boolean(state.boss?.active));
+						game?.setBossRetryAt(state.bossRetryAt ?? null);
 						break;
 					}
 					case 'dungeon':
 						rooms = message.rooms as typeof rooms;
-						game?.setBossReady(state ? state.solvedRooms.length >= rooms.length : false);
+						game?.setBossReady(state?.status === 'boss');
 						break;
 					case 'boss.list':
 						bossOptions = message.bosses as BossOption[];
@@ -229,12 +281,6 @@
 					case 'ghosts':
 						game?.setGhosts(message.houses as Ghost[]);
 						break;
-					case 'orbs':
-						game?.setOrbs(message.orbs as Orb[]);
-						break;
-					case 'orbsHidden':
-						game?.setOrbsHidden(Boolean(message.hidden));
-						break;
 					case 'scoreboard':
 						scoreboard = message as unknown as Scoreboard;
 						break;
@@ -243,20 +289,26 @@
 							prompt: String(message.prompt),
 							hint: message.hint ? String(message.hint) : null
 						};
-						terminalRoomId = realTableFor(house, Number(message.room ?? state?.room ?? 1));
+						terminalRoomId =
+							typeof message.plugId === 'string'
+								? message.plugId
+								: questionTableIdForRoom(Number(message.room ?? state?.room ?? 1));
 						terminalSolved = false;
 						feedback = '';
+						game?.setNextPlug(null);
 						game?.setPaused(true);
 						break;
 					case 'answerResult': {
 						const result = message as unknown as {
 							correct: boolean;
 							lockUntil: number | null;
+							nextPlugId?: string;
 						};
 						lockUntil = result.lockUntil;
 						if (result.correct) {
 							terminalSolved = true;
 							feedback = 'ACCESS GRANTED';
+							game?.setNextPlug(result.nextPlugId ?? null);
 						} else {
 							const seconds = result.lockUntil
 								? Math.max(1, Math.ceil((result.lockUntil - Date.now()) / 1000))
@@ -445,11 +497,16 @@
 						break;
 					}
 					case 'boss.end': {
-						const end = message as unknown as { won: boolean; score: number; reason?: string };
+						const end = message as unknown as {
+							won: boolean;
+							score: number;
+							reason?: string;
+							retryAt?: number | null;
+						};
 						notice = end.won
 							? `BOSS DEFEATED · ${end.score} points`
 							: end.reason === 'knockout'
-								? 'KNOCKED OUT · returned to the floor'
+								? `KNOCKED OUT · retry in ${Math.max(0, Math.ceil(((end.retryAt ?? Date.now()) - Date.now()) / 1000))}s`
 								: 'Boss fight left';
 						setTimeout(() => (notice = ''), 5000);
 						if (end.won) {
@@ -488,6 +545,7 @@
 		return () => {
 			disposed = true;
 			clearInterval(timer);
+			clearCutsceneTimer();
 			socket?.close();
 			stopBossAudio();
 			game?.destroy();
@@ -504,20 +562,21 @@
 
 	<div class="hud top-left">
 		<div class="brand">COALITION BACKROOMS</div>
-		<div class="house" style:color={HOUSES[house].color}>
+		<div class="house userbox" style:color={HOUSES[house].color}>
 			{HOUSES[house].name} <span>· machine {session?.code ?? '····'}</span>
 		</div>
 		<div class="stats">
 			<span>F{hud.floor}</span>
-			<span>Room {state?.room ?? 1}</span>
+			<span>P{hud.plug}</span>
 			<span>HP {state?.hp ?? 100}</span>
 			<span class="score">{state?.score ?? 0} pts</span>
 			<span class="clock">{timeLeft}</span>
 		</div>
 		<div class="players">
 			{#each HOUSE_IDS as id}
+				{@const shadow = shadows.find((item) => item.house === id)}
 				<span style:color={HOUSES[id].color}>
-					{HOUSES[id].name.slice(0, 3)} {shadows.find((item) => item.house === id)?.room ?? 1}
+					{HOUSES[id].name.slice(0, 3)} F{shadow?.floor ?? 1}·P{shadow?.plug ?? 1}
 				</span>
 			{/each}
 		</div>
@@ -557,6 +616,16 @@
 			solved={terminalSolved}
 			onClose={closeTerminal}
 			onSubmit={submit}
+		/>
+	{/if}
+
+	{#if cutscene}
+		<BossCutscene
+			floor={cutscene.floor}
+			name={cutscene.name}
+			title={cutscene.title}
+			question={cutscene.question}
+			onDone={finishCutscene}
 		/>
 	{/if}
 
@@ -615,7 +684,7 @@
 		font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 		color: #f4f0f5;
 	}
-	.game { position: fixed; inset: 0; }
+	.game { position: fixed; inset: 0; user-select: none; -webkit-user-select: none; }
 	canvas {
 		display: block;
 		width: 100vw;
@@ -640,6 +709,7 @@
 	.brand { color: #f5b301; letter-spacing: 0.16em; font-size: 0.6rem; }
 	.house { font-size: 0.9rem; font-weight: 700; margin-top: 0.2rem; }
 	.house span { color: #9f95a6; font-size: 0.7rem; font-weight: 400; }
+	.userbox { user-select: none; -webkit-user-select: none; }
 	.stats { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.25rem; }
 	.stats .score { color: #6ee7a8; }
 	.stats .clock { color: #ffd166; font-weight: 700; }

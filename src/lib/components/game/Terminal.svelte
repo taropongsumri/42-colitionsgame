@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	/** Shell-style answer terminal ported from the earlier prototype. */
 	export let roomId: string;
@@ -16,6 +16,20 @@
 	let answer = '';
 	let submitted: string | null = null;
 	let input: HTMLInputElement;
+	let closeTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// A correct answer closes the terminal automatically, leaving the red
+	// next-plug arrow visible on the map.
+	$: if (solved && closeTimer === null) {
+		closeTimer = setTimeout(() => {
+			closeTimer = null;
+			onClose();
+		}, 900);
+	}
+
+	onDestroy(() => {
+		if (closeTimer) clearTimeout(closeTimer);
+	});
 
 	$: lines = [
 		{ kind: 'cmd', text: `cat ~/quest/${roomId}.txt` },
@@ -96,7 +110,7 @@
 				</form>
 			{/if}
 		</div>
-		<div class="foot">Enter to submit · Esc to close</div>
+		<div class="foot">Enter to submit · Esc to close · auto-closes on success</div>
 	</div>
 </div>
 

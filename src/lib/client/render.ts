@@ -17,6 +17,8 @@ export type Actor = {
 	ghost?: string;
 	/** Spectator light orb colour; orbs float and ignore fog of war. */
 	orb?: string;
+	/** Fire/water cosmetic skin chosen by the spectator. */
+	skin?: 'fire' | 'water';
 	/** Optional house label drawn above full-colour actors. */
 	name?: string;
 	nameColor?: string;
@@ -26,6 +28,10 @@ export type RenderState = {
 	near: string | null;
 	/** The question plug for the house's current room; it glows brighter. */
 	highlight: string | null;
+	/** After a correct answer, a red arrow points at the next plug. */
+	next?: string | null;
+	/** Spectators can see the boss gate on every lift. */
+	bossGate?: boolean;
 	/** The old prototype's backroom backdrop, drawn behind the white floors. */
 	background?: HTMLImageElement | null;
 };
@@ -284,6 +290,26 @@ function drawTable(ctx: CanvasRenderingContext2D, prop: Prop, cam: Camera, st: R
 			const by = cy - 22 + Math.round(Math.sin(t * 5));
 			ctx.fillRect(cx - 1, by, 3, 3); ctx.fillRect(cx, by + 3, 1, 2);
 		}
+		if (st.next === prop.roomId) {
+			// Red arrow marking the next plug after a correct answer.
+			const ay = cy - 30 + Math.round(Math.sin(t * 6) * 3);
+			ctx.save();
+			ctx.fillStyle = '#ff3b4e';
+			ctx.shadowColor = '#ff3b4e';
+			ctx.shadowBlur = 8;
+			ctx.beginPath();
+			ctx.moveTo(cx, ay + 12);
+			ctx.lineTo(cx - 6, ay + 2);
+			ctx.lineTo(cx - 2, ay + 2);
+			ctx.lineTo(cx - 2, ay - 5);
+			ctx.lineTo(cx + 2, ay - 5);
+			ctx.lineTo(cx + 2, ay + 2);
+			ctx.lineTo(cx + 6, ay + 2);
+			ctx.closePath();
+			ctx.fill();
+			ctx.restore();
+			label(ctx, 'NEXT', cx, ay - 11, '#ff6b7a', 0.95);
+		}
 	}
 	drawMac(ctx, cx - 9, cy + 7, true, t, prop.tx * 3 + prop.ty);
 	drawMac(ctx, cx + 10, cy + 7, true, t, prop.tx + prop.ty * 5 + 1);
@@ -306,7 +332,14 @@ function drawChair(ctx: CanvasRenderingContext2D, prop: Prop, cam: Camera) {
 	}
 }
 
-function drawTransport(ctx: CanvasRenderingContext2D, prop: Prop, cam: Camera, t: number, outdoor: boolean) {
+function drawTransport(
+	ctx: CanvasRenderingContext2D,
+	prop: Prop,
+	cam: Camera,
+	t: number,
+	outdoor: boolean,
+	bossGate = false
+) {
 	const x = Math.round(prop.tx * TILE - cam.x), y = Math.round(prop.ty * TILE - cam.y);
 	if (prop.kind === 'door') {
 		if (outdoor) label(ctx, 'ENTER', Math.round(prop.x - cam.x), y + 8, '#ffcf5a', 0.85 + Math.sin(t * 3) * 0.15);
@@ -333,6 +366,15 @@ function drawTransport(ctx: CanvasRenderingContext2D, prop: Prop, cam: Camera, t
 		ctx.fillRect(x + 2, y + 1, TILE - 3, 1);
 		ctx.fillRect(x + TILE + 1, y + 1, TILE - 3, 1);
 		label(ctx, 'LIFT', x + TILE, y - 6, '#ffb020', 0.85 + Math.sin(t * 2) * 0.15);
+		if (bossGate) {
+			ctx.save();
+			ctx.globalAlpha = 0.75 + Math.sin(t * 3) * 0.25;
+			ctx.strokeStyle = '#ff3b4e';
+			ctx.lineWidth = 1;
+			ctx.strokeRect(x + 0.5, y + 0.5, TILE * 2 - 1, TILE - 1);
+			ctx.restore();
+			label(ctx, 'BOSS GATE', x + TILE, y + TILE + 8, '#ff6b7a');
+		}
 	}
 }
 
@@ -340,16 +382,49 @@ function drawActor(ctx: CanvasRenderingContext2D, actor: Actor, cam: Camera) {
 	const x = Math.round(actor.x - cam.x), y = Math.round(actor.y - cam.y);
 	if (actor.orb) {
 		const pulse = 0.8 + Math.sin(performance.now() / 320 + actor.x) * 0.2;
+		const cy = y - 12 - (actor.bob ?? 0);
 		ctx.save();
 		ctx.globalAlpha = (actor.alpha ?? 1) * pulse;
-		ctx.fillStyle = actor.orb;
-		ctx.shadowColor = actor.orb;
 		ctx.shadowBlur = 14;
-		ctx.beginPath();
-		ctx.arc(x, y - 12 - (actor.bob ?? 0), 5, 0, Math.PI * 2);
-		ctx.fill();
+		if (actor.skin === 'fire') {
+			ctx.shadowColor = '#ff7a18';
+			ctx.fillStyle = '#ff3b0d';
+			ctx.beginPath();
+			ctx.moveTo(x, cy - 9);
+			ctx.quadraticCurveTo(x + 7, cy - 1, x + 4, cy + 6);
+			ctx.quadraticCurveTo(x, cy + 10, x - 4, cy + 6);
+			ctx.quadraticCurveTo(x - 7, cy - 1, x, cy - 9);
+			ctx.fill();
+			ctx.fillStyle = '#ffd166';
+			ctx.beginPath();
+			ctx.moveTo(x, cy - 3);
+			ctx.quadraticCurveTo(x + 3, cy + 2, x, cy + 6);
+			ctx.quadraticCurveTo(x - 3, cy + 2, x, cy - 3);
+			ctx.fill();
+		} else if (actor.skin === 'water') {
+			ctx.shadowColor = '#3ab4ff';
+			ctx.fillStyle = '#1d7fe0';
+			ctx.beginPath();
+			ctx.arc(x, cy + 1, 6, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.fillStyle = '#7ef9ff';
+			ctx.beginPath();
+			ctx.arc(x - 2, cy - 1, 2, 0, Math.PI * 2);
+			ctx.fill();
+			ctx.strokeStyle = '#bff4ff';
+			ctx.lineWidth = 1;
+			ctx.beginPath();
+			ctx.arc(x, cy + 1, 9 + Math.sin(performance.now() / 400) * 1.5, 0, Math.PI * 2);
+			ctx.stroke();
+		} else {
+			ctx.fillStyle = actor.orb;
+			ctx.shadowColor = actor.orb;
+			ctx.beginPath();
+			ctx.arc(x, cy, 5, 0, Math.PI * 2);
+			ctx.fill();
+		}
 		ctx.shadowBlur = 0;
-		label(ctx, 'SPECTATOR', x, y - 26, actor.orb);
+		label(ctx, 'SPECTATOR', x, y - 26, actor.skin === 'water' ? '#7ef9ff' : actor.skin === 'fire' ? '#ffb347' : actor.orb);
 		ctx.restore();
 		return;
 	}
@@ -416,7 +491,7 @@ export function renderFloor(
 	}
 	for (const prop of map.props)
 		if (prop.kind === 'stairs' || prop.kind === 'elevator' || prop.kind === 'door')
-			drawTransport(ctx, prop, cam, t, map.outdoor);
+			drawTransport(ctx, prop, cam, t, map.outdoor, !!st.bossGate);
 
 	const items: { y: number; draw: () => void }[] = [];
 	for (let ty = ty0; ty <= ty1; ty++)

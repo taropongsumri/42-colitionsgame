@@ -1,8 +1,15 @@
+import {
+	FLOOR_COUNT,
+	QUESTIONS_PER_FLOOR,
+	TOTAL_QUESTION_SLOTS,
+	floorForRoom,
+	plugForRoom,
+	roomForFloorPlug
+} from '../../shared/map';
 import type { HouseId } from '../../shared/types';
 import { audit } from '../audit';
 import { getStore } from '../db';
 import { startClock, timeLeftMs } from './clock';
-import { liveConfig } from '../config';
 
 export interface ControlInput {
 	action:
@@ -13,6 +20,7 @@ export interface ControlInput {
 		| 'adjustScore'
 		| 'forceUnlock'
 		| 'forceBoss'
+		| 'clearBossRetry'
 		| 'announce'
 		| 'hideOrbs'
 		| 'end';
@@ -72,15 +80,25 @@ export async function control(input: ControlInput): Promise<{ notice?: string }>
 		case 'forceUnlock': {
 			if (!input.house) return {};
 			const house = await store.getHouse(input.house);
-			if (!house) return {};
-			house.solvedRooms.push(house.room);
-			house.room += 1;
-			house.status = 'open';
+			if (!house || house.room > TOTAL_QUESTION_SLOTS) return {};
+			const floor = floorForRoom(house.room);
+			const plug = plugForRoom(house.room);
+			if (!house.solvedRooms.includes(house.room)) house.solvedRooms.push(house.room);
+			// Clearing plug six opens the lift but keeps the player on that floor
+			// until the boss is beaten.
+			if (plug === QUESTIONS_PER_FLOOR) {
+				house.room = roomForFloorPlug(floor, QUESTIONS_PER_FLOOR);
+				house.status = 'boss';
+			} else {
+				house.room += 1;
+				house.status = 'open';
+			}
+			house.answerLockUntil = null;
 			await store.saveHouse(house);
 			await audit({
 				type: 'admin.unlock',
 				house: house.id,
-				message: `Room ${house.room - 1} force-unlocked`
+				message: `Floor ${floor} plug ${plug} force-unlocked`
 			});
 			break;
 		}
@@ -88,15 +106,35 @@ export async function control(input: ControlInput): Promise<{ notice?: string }>
 			if (!input.house) return {};
 			const house = await store.getHouse(input.house);
 			if (!house) return {};
-			const { game } = await liveConfig();
-			house.solvedRooms = Array.from({ length: game.roomCount }, (_, index) => index + 1);
-			house.room = game.roomCount + 1;
-			house.status = 'solved';
+			const floor = Math.min(FLOOR_COUNT, Math.max(1, floorForRoom(house.room)));
+			const rooms = Array.from(
+				{ length: QUESTIONS_PER_FLOOR },
+				(_, index) => roomForFloorPlug(floor, index + 1)
+			);
+			house.solvedRooms = [...new Set([...house.solvedRooms, ...rooms])];
+			house.room = roomForFloorPlug(floor, QUESTIONS_PER_FLOOR);
+			house.status = 'boss';
+			house.answerLockUntil = null;
+			house.bossRetryAt = null;
 			await store.saveHouse(house);
 			await audit({
 				type: 'admin.bossUnlock',
 				house: house.id,
-				message: 'Lift unlocked by admin'
+				message: `Floor ${floor} lift unlocked by admin`
+			});
+			break;
+		}
+		case 'clearBossRetry': {
+			if (!input.house) return {};
+			const house = await store.getHouse(input.house);
+			if (!house) return {};
+			house.bossRetryAt = null;
+			if (!house.boss.active) house.status = 'boss';
+			await store.saveHouse(house);
+			await audit({
+				type: 'admin.bossRetryCleared',
+				house: house.id,
+				message: 'Boss retry delay cleared by admin'
 			});
 			break;
 		}

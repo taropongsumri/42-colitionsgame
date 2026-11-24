@@ -8,7 +8,12 @@ Bun.env.DATA_DIR = await mkdtemp(join(tmpdir(), 'coalition-gameplay-'));
 const { defaults, effectiveConfig } = await import('../config');
 const { getStore } = await import('../src/lib/server/db');
 const { normalizeAnswer, isCorrectAnswer } = await import('../src/lib/server/game/answer');
-const { assignQuestions, tablesFor, questionFor } = await import('../src/lib/server/game/dungeon');
+const {
+	dealAllHouses,
+	pendingBossFor,
+	tablesFor,
+	questionFor
+} = await import('../src/lib/server/game/dungeon');
 const { bonusPercent, roomPoints, clearPlace } = await import('../src/lib/server/game/scoring');
 const { startClock, timeLeftMs } = await import('../src/lib/server/game/clock');
 const { control } = await import('../src/lib/server/game/control');
@@ -27,15 +32,18 @@ const { serverMessageSchema } = await import('../src/lib/shared/protocol');
 const { realTableFor, hintTableFor, TABLE_IDS } = await import('../src/lib/shared/dungeon');
 const { advanceBossWords } = await import('../src/lib/client/bossWords');
 
-const questionIds = Array.from({ length: 30 }, (_, index) => `q${String(index + 1).padStart(2, '0')}`);
-const questions = questionIds.map((id, index) => ({
-	id,
-	category: 'math' as const,
-	question: `What is ${index + 1}?`,
-	answer: String(index + 1),
-	acceptedAnswers: [String(index + 1)],
-	hint: `Hint ${index + 1}`
-}));
+/** Mirror the production 90-question quotas for deterministic tests. */
+const questions = Array.from({ length: 90 }, (_, index) => {
+	const category = index < 45 ? 'network' : index < 60 ? 'sport' : 'general';
+	return {
+		id: `q${String(index + 1).padStart(3, '0')}`,
+		category: category as 'network' | 'sport' | 'general',
+		question: `What is ${index + 1}?`,
+		answer: String(index + 1),
+		acceptedAnswers: [String(index + 1)],
+		hint: `Hint ${index + 1}`
+	};
+});
 
 describe('phase 2 gameplay', () => {
 	beforeAll(async () => {
@@ -55,20 +63,26 @@ describe('phase 2 gameplay', () => {
 		expect(isCorrectAnswer('window', { ...questions[0], answer: 'door', acceptedAnswers: ['door'] })).toBe(false);
 	});
 
-	test('questions are distributed round-robin across houses', () => {
-		const assigned = assignQuestions(questions);
-		expect(assigned.h1).toHaveLength(10);
-		expect(assigned.h2).toHaveLength(10);
-		expect(assigned.h3).toHaveLength(10);
-		expect(new Set([...assigned.h1, ...assigned.h2, ...assigned.h3]).size).toBe(30);
-		expect(assigned.h1[0]).toBe('q01');
-		expect(assigned.h2[0]).toBe('q02');
-		expect(assigned.h3[0]).toBe('q03');
+	test('questions are dealt uniquely with per-house category quotas', () => {
+		const dealt = dealAllHouses(questions);
+		expect(dealt.h1).toHaveLength(30);
+		expect(dealt.h2).toHaveLength(30);
+		expect(dealt.h3).toHaveLength(30);
+		expect(new Set([...dealt.h1, ...dealt.h2, ...dealt.h3]).size).toBe(90);
+		for (const ids of Object.values(dealt)) {
+			const byId = new Map(questions.map((question) => [question.id, question]));
+			const counts = ids.reduce<Record<string, number>>((result, id) => {
+				const category = byId.get(id)!.category;
+				result[category] = (result[category] ?? 0) + 1;
+				return result;
+			}, {});
+			expect(counts).toEqual({ network: 15, sport: 5, general: 10 });
+		}
 	});
 
-	test('tables match client-side powered socket formula', () => {
+	test('tables match the six-plug floor map', () => {
 		for (const house of ['h1', 'h2', 'h3'] as const) {
-			for (let room = 1; room <= 10; room += 1) {
+			for (let room = 1; room <= 30; room += 1) {
 				const tables = tablesFor(house, room);
 				expect(tables.real).toBe(realTableFor(house, room));
 				expect(tables.hint).toBe(hintTableFor(house, room));
@@ -76,8 +90,9 @@ describe('phase 2 gameplay', () => {
 			}
 		}
 		expect(realTableFor('h1', 1)).toBe('f1-r1');
-		expect(realTableFor('h1', 6)).toBe('f2-r1');
-		expect(hintTableFor('h1', 5)).toBe('f1-r1');
+		expect(realTableFor('h1', 6)).toBe('f1-r6');
+		expect(realTableFor('h1', 7)).toBe('f2-r1');
+		expect(hintTableFor('h1', 6)).toBe('f1-r1');
 	});
 
 	test('scoring rewards earlier clears', () => {
@@ -108,6 +123,9 @@ describe('phase 2 gameplay', () => {
 		expect(house).not.toBeNull();
 		house!.room = 1;
 		house!.solvedRooms = [];
+		house!.status = 'open';
+		house!.defeatedBosses = [];
+		house!.bossRetryAt = null;
 		house!.answerLockUntil = null;
 		await store.saveHouse(house!);
 
@@ -173,6 +191,7 @@ describe('phase 2 gameplay', () => {
 		const unlocked = (await store.getHouse('h1'))!;
 		expect(unlocked.solvedRooms).toContain(1);
 		expect(unlocked.room).toBe(2);
+		expect(unlocked.status).toBe('open');
 
 		await control({ action: 'announce', text: 'hello players' });
 		expect((await store.getMeta()).announcement).toBe('hello players');
@@ -200,8 +219,13 @@ describe('phase 2 gameplay', () => {
 		expect(custom.boss.bosses[0].id).toBe('extra-boss');
 
 		const house = (await store.getHouse('h1'))!;
-		house.room = config.game.roomCount + 1;
-		house.solvedRooms = Array.from({ length: config.game.roomCount }, (_, index) => index + 1);
+		house.room = config.game.plugsPerFloor;
+		house.solvedRooms = Array.from(
+			{ length: config.game.plugsPerFloor },
+			(_, index) => index + 1
+		);
+		house.defeatedBosses = [];
+		house.bossRetryAt = null;
 		house.boss.active = false;
 		house.answerLockUntil = null;
 		const scoreBefore = house.score;
@@ -301,8 +325,13 @@ describe('phase 2 gameplay', () => {
 		const config = await liveConfig();
 		const boss = findBoss(config, 'staff')!;
 		const house = (await store.getHouse('h2'))!;
-		house.room = config.game.roomCount + 1;
-		house.solvedRooms = Array.from({ length: config.game.roomCount }, (_, index) => index + 1);
+		house.room = config.game.plugsPerFloor;
+		house.solvedRooms = Array.from(
+			{ length: config.game.plugsPerFloor },
+			(_, index) => index + 1
+		);
+		house.defeatedBosses = [];
+		house.bossRetryAt = null;
 		house.boss.active = false;
 		house.answerLockUntil = null;
 		await store.saveHouse(house);
@@ -357,8 +386,13 @@ describe('phase 2 gameplay', () => {
 		const store = await getStore();
 		const config = await liveConfig();
 		const house = (await store.getHouse('h3'))!;
-		house.room = config.game.roomCount + 1;
-		house.solvedRooms = Array.from({ length: config.game.roomCount }, (_, index) => index + 1);
+		house.room = config.game.plugsPerFloor;
+		house.solvedRooms = Array.from(
+			{ length: config.game.plugsPerFloor },
+			(_, index) => index + 1
+		);
+		house.defeatedBosses = [];
+		house.bossRetryAt = null;
 		house.boss.active = false;
 		house.answerLockUntil = null;
 		house.score = 200;

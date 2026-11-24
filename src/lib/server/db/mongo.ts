@@ -86,6 +86,9 @@ export class MongoStore implements Store {
 		const house = this.strip<HouseState>(doc);
 		house.solvedRooms ??= [];
 		house.lastClearAt ??= null;
+		house.questionOrder ??= [];
+		house.defeatedBosses ??= [];
+		house.bossRetryAt ??= null;
 		house.boss = emptyBoss(house.boss ?? {});
 		return house;
 	}

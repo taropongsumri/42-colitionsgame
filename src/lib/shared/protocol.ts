@@ -31,7 +31,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
 		x: z.number().finite(),
 		y: z.number().finite()
 	}),
-	z.object({ type: z.literal('spectatorVisible'), visible: z.boolean() })
+	z.object({ type: z.literal('spectatorVisible'), visible: z.boolean() }),
+	z.object({ type: z.literal('spectatorSkin'), skin: z.enum(['fire', 'water']) })
 ]);
 
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
@@ -49,18 +50,29 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 	z.object({
 		type: z.literal('question'),
 		room: z.number(),
+		floor: z.number(),
+		plug: z.number(),
+		plugId: z.string(),
 		prompt: z.string(),
 		hint: z.string().nullable()
 	}),
 	z.object({
 		type: z.literal('dungeon'),
 		current: z.number(),
+		floor: z.number(),
+		plug: z.number(),
 		rooms: z.array(z.object({ number: z.number(), status: z.string() }))
 	}),
 	z.object({
 		type: z.literal('shadows'),
 		houses: z.array(
-			z.object({ house: houseIdSchema, room: z.number(), connected: z.boolean() })
+			z.object({
+				house: houseIdSchema,
+				room: z.number(),
+				floor: z.number(),
+				plug: z.number(),
+				connected: z.boolean()
+			})
 		)
 	}),
 	z.object({
@@ -77,7 +89,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 	z.object({
 		type: z.literal('answerResult'),
 		correct: z.boolean(),
-		lockUntil: z.number().nullable()
+		lockUntil: z.number().nullable(),
+		nextPlugId: z.string().optional()
 	}),
 	// Boss messages never carry accepted answers — those stay on the server.
 	z.object({
@@ -85,10 +98,12 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		bosses: z.array(
 			z.object({
 				id: z.string(),
+				floor: z.number(),
 				name: z.string(),
 				title: z.string(),
 				question: z.string(),
-				hp: z.number()
+				hp: z.number(),
+				defeated: z.boolean().optional()
 			})
 		)
 	}),
@@ -96,6 +111,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		type: z.literal('boss.start'),
 		boss: z.object({
 			id: z.string(),
+			floor: z.number(),
 			name: z.string(),
 			title: z.string(),
 			question: z.string(),
@@ -192,7 +208,9 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		won: z.boolean(),
 		score: z.number(),
 		bossHp: z.number(),
-		reason: z.string().optional()
+		reason: z.string().optional(),
+		retryAt: z.number().nullable().optional(),
+		floor: z.number().optional()
 	}),
 	z.object({
 		type: z.literal('boss.reset'),
@@ -213,7 +231,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 		type: z.literal('spectator.welcome'),
 		id: z.string(),
 		visible: z.boolean(),
-		orbsHidden: z.boolean()
+		orbsHidden: z.boolean(),
+		skin: z.enum(['fire', 'water']).optional()
 	}),
 	z.object({
 		type: z.literal('orbs'),
@@ -223,7 +242,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 				floor: z.number(),
 				x: z.number(),
 				y: z.number(),
-				visible: z.boolean()
+				visible: z.boolean(),
+				skin: z.enum(['fire', 'water']).optional()
 			})
 		)
 	}),

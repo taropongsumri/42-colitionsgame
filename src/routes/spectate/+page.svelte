@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 	import { createSpectator, type SpectatorOrb } from '$lib/client/spectator';
+	import type { SpectatorSkin } from '$lib/shared/types';
 
 	let canvas: HTMLCanvasElement;
 	let key = '';
@@ -11,6 +12,7 @@
 	let visible = true;
 	let orbsHidden = false;
 	let ownId = '';
+	let skin: SpectatorSkin = 'fire';
 	let socket: WebSocket | undefined;
 	let spectator: ReturnType<typeof createSpectator> | undefined;
 
@@ -43,6 +45,9 @@
 					ownId = String(message.id);
 					visible = Boolean(message.visible);
 					orbsHidden = Boolean(message.orbsHidden);
+					skin = message.skin === 'water' ? 'water' : 'fire';
+					spectator?.setSkin(skin);
+					spectator?.setOrbsHidden(orbsHidden);
 					joined = true;
 					status = `Orb ${ownId} · read-only`;
 					break;
@@ -51,6 +56,7 @@
 					break;
 				case 'orbsHidden':
 					orbsHidden = Boolean(message.hidden);
+					spectator?.setOrbsHidden(orbsHidden);
 					break;
 				case 'error':
 					error = String(message.message);
@@ -64,6 +70,12 @@
 		send({ type: 'spectatorVisible', visible });
 	}
 
+	function setSkin(next: SpectatorSkin) {
+		skin = next;
+		spectator?.setSkin(next);
+		send({ type: 'spectatorSkin', skin: next });
+	}
+
 	function mapFloorLabel(value: number): string {
 		return String(value).padStart(2, '0');
 	}
@@ -74,7 +86,8 @@
 			onMove: (position) => {
 				floor = position.floor;
 				send({ type: 'spectatorMove', ...position });
-			}
+			},
+			onSkin: (next) => setSkin(next)
 		});
 	});
 
@@ -91,7 +104,8 @@
 <div class="hud">
 	<strong>SPECTATOR</strong> · {status}
 	<span>F{mapFloorLabel(floor)}</span>
-	<span class:hidden={orbsHidden}>{orbsHidden ? 'orbs hidden by admin' : 'orbs visible'}</span>
+	<span class:hidden={orbsHidden}>{orbsHidden ? 'other orbs hidden by admin' : 'orbs visible'}</span>
+	<span class="skin">skin: {skin}</span>
 	<a href="/">Back</a> · <a href="/scoreboard">Board</a>
 </div>
 
@@ -108,7 +122,9 @@
 {#if joined}
 	<div class="controls">
 		<button onclick={toggleVisible}>{visible ? 'Hide my orb' : 'Show my orb'}</button>
-		<span><kbd>WASD</kbd> fly · <kbd>1-5</kbd> floor</span>
+		<button class:active={skin === 'fire'} onclick={() => setSkin('fire')}>🔥 Fire</button>
+		<button class:active={skin === 'water'} onclick={() => setSkin('water')}>💧 Water</button>
+		<span><kbd>WASD</kbd> fly · <kbd>0-5</kbd> floor · <kbd>B</kbd> lift · <kbd>Z/X</kbd> skin</span>
 	</div>
 {/if}
 
@@ -126,10 +142,12 @@
 	}
 	.hud { top: 1rem; display: flex; gap: 0.8rem; flex-wrap: wrap; }
 	.hud strong { color: #7ef9ff; }
+	.hud .skin { color: #ffb347; }
 	.hud .hidden { color: #ff5d6c; }
 	.hud a { color: #8b5cf6; }
 	.controls { bottom: 1rem; display: flex; gap: 0.8rem; align-items: center; }
 	button, input { background: #241d29; color: #f4f0f5; border: 1px solid #3a3140; padding: 0.35rem; font-family: inherit; }
+	button.active { border-color: #ffb347; color: #ffd166; box-shadow: 0 0 10px rgba(255, 179, 71, 0.35); }
 	kbd { border: 1px solid #5b4d70; padding: 0 4px; }
 	.gate {
 		position: fixed;

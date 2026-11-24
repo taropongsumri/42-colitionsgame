@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+@import "tw-animate-css";
+@import "shadcn-svelte/tailwind.css";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* The whole game is dark, so dark: variants are always active. */
+@custom-variant dark (&:is(:root, .dark *));
+
+:root {
+	color-scheme: dark;
+	/* Dark retro arcade palette: deep violet + amber. */
+	--background: oklch(0.14 0.02 305);
+	--foreground: oklch(0.96 0.01 300);
+	--card: oklch(0.19 0.025 305);
+	--card-foreground: oklch(0.96 0.01 300);
+	--popover: oklch(0.2 0.03 305);
+	--popover-foreground: oklch(0.96 0.01 300);
+	--primary: oklch(0.79 0.15 85);
+	--primary-foreground: oklch(0.18 0.03 300);
+	--secondary: oklch(0.26 0.04 302);
+	--secondary-foreground: oklch(0.96 0.01 300);
+	--muted: oklch(0.23 0.03 305);
+	--muted-foreground: oklch(0.72 0.03 302);
+	--accent: oklch(0.31 0.08 295);
+	--accent-foreground: oklch(0.96 0.01 300);
+	--destructive: oklch(0.66 0.2 25);
+	--border: oklch(0.36 0.04 305);
+	--input: oklch(0.29 0.04 305);
+	--ring: oklch(0.72 0.12 295);
+	--chart-1: oklch(0.79 0.15 85);
+	--chart-2: oklch(0.65 0.14 300);
+	--chart-3: oklch(0.6 0.12 250);
+	--chart-4: oklch(0.7 0.1 160);
+	--chart-5: oklch(0.65 0.15 30);
+	--radius: 0.125rem;
+	--sidebar: oklch(0.19 0.025 305);
+	--sidebar-foreground: oklch(0.96 0.01 300);
+	--sidebar-primary: oklch(0.79 0.15 85);
+	--sidebar-primary-foreground: oklch(0.18 0.03 300);
+	--sidebar-accent: oklch(0.31 0.08 295);
+	--sidebar-accent-foreground: oklch(0.96 0.01 300);
+	--sidebar-border: oklch(0.36 0.04 305);
+	--sidebar-ring: oklch(0.72 0.12 295);
+}
+
+.dark {
+	color-scheme: dark;
+	--background: oklch(0.14 0.02 305);
+	--foreground: oklch(0.96 0.01 300);
+	--card: oklch(0.19 0.025 305);
+	--card-foreground: oklch(0.96 0.01 300);
+	--popover: oklch(0.2 0.03 305);
+	--popover-foreground: oklch(0.96 0.01 300);
+	--primary: oklch(0.79 0.15 85);
+	--primary-foreground: oklch(0.18 0.03 300);
+	--secondary: oklch(0.26 0.04 302);
+	--secondary-foreground: oklch(0.96 0.01 300);
+	--muted: oklch(0.23 0.03 305);
+	--muted-foreground: oklch(0.72 0.03 302);
+	--accent: oklch(0.31 0.08 295);
+	--accent-foreground: oklch(0.96 0.01 300);
+	--destructive: oklch(0.66 0.2 25);
+	--border: oklch(0.36 0.04 305);
+	--input: oklch(0.29 0.04 305);
+	--ring: oklch(0.72 0.12 295);
+	--chart-1: oklch(0.79 0.15 85);
+	--chart-2: oklch(0.65 0.14 300);
+	--chart-3: oklch(0.6 0.12 250);
+	--chart-4: oklch(0.7 0.1 160);
+	--chart-5: oklch(0.65 0.15 30);
+	--sidebar: oklch(0.19 0.025 305);
+	--sidebar-foreground: oklch(0.96 0.01 300);
+	--sidebar-primary: oklch(0.79 0.15 85);
+	--sidebar-primary-foreground: oklch(0.18 0.03 300);
+	--sidebar-accent: oklch(0.31 0.08 295);
+	--sidebar-accent-foreground: oklch(0.96 0.01 300);
+	--sidebar-border: oklch(0.36 0.04 305);
+	--sidebar-ring: oklch(0.72 0.12 295);
+}
+
+@theme inline {
+	--font-mono: 'JetBrains Mono Variable', monospace;
+	--color-sidebar-ring: var(--sidebar-ring);
+	--color-sidebar-border: var(--sidebar-border);
+	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+	--color-sidebar-accent: var(--sidebar-accent);
+	--color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+	--color-sidebar-primary: var(--sidebar-primary);
+	--color-sidebar-foreground: var(--sidebar-foreground);
+	--color-sidebar: var(--sidebar);
+	--color-chart-5: var(--chart-5);
+	--color-chart-4: var(--chart-4);
+	--color-chart-3: var(--chart-3);
+	--color-chart-2: var(--chart-2);
+	--color-chart-1: var(--chart-1);
+	--color-ring: var(--ring);
+	--color-input: var(--input);
+	--color-border: var(--border);
+	--color-destructive: var(--destructive);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-accent: var(--accent);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-muted: var(--muted);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-secondary: var(--secondary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-primary: var(--primary);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-popover: var(--popover);
+	--color-card-foreground: var(--card-foreground);
+	--color-card: var(--card);
+	--color-foreground: var(--foreground);
+	--color-background: var(--background);
+	--radius-sm: calc(var(--radius) * 0.6);
+	--radius-md: calc(var(--radius) * 0.8);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) * 1.4);
+	--radius-2xl: calc(var(--radius) * 1.8);
+	--radius-3xl: calc(var(--radius) * 2.2);
+	--radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+	body {
+		@apply bg-background text-foreground antialiased;
+		min-height: 100vh;
+	}
+	html {
+		@apply font-mono;
+	}
+}

@@ -3,7 +3,7 @@ import type { Question } from '../src/lib/shared/types';
 
 interface SourceQuestion {
 	id: string;
-	category: 'computer' | 'math' | 'science';
+	category: 'network' | 'sport' | 'general';
 	question: string;
 	answer: string;
 	accepted_answers: string[];

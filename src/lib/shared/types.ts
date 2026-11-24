@@ -42,12 +42,17 @@ export const HOUSES: Record<HouseId, HouseDefinition> = {
 };
 
 export type GamePhase = 'lobby' | 'playing' | 'boss' | 'ended';
-export type RoomStatus = 'locked' | 'open' | 'solved';
+export type PlugStatus = 'locked' | 'open' | 'solved';
+/** Kept as an alias so older config/state files still typecheck. */
+export type RoomStatus = PlugStatus;
 export type CharacterType = 'vowel' | 'consonant' | 'digit' | 'symbol';
+export type SpectatorSkin = 'fire' | 'water';
+
+export type QuestionCategory = 'network' | 'sport' | 'general';
 
 export interface Question {
 	id: string;
-	category: 'computer' | 'math' | 'science';
+	category: QuestionCategory;
 	question: string;
 	answer: string;
 	acceptedAnswers: readonly string[];
@@ -57,6 +62,9 @@ export interface Question {
 export interface ScoreRow {
 	house: HouseId;
 	score: number;
+	/** Internal global plug counter; UI should render floor + plug. */
 	room: number;
+	floor: number;
+	plug: number;
 	hp: number | null;
 }

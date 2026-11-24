@@ -1,4 +1,4 @@
-import type { HouseId, Question, RoomStatus } from '../../shared/types';
+import type { HouseId, PlugStatus, Question } from '../../shared/types';
 
 export interface Machine {
 	code: string;
@@ -83,18 +83,28 @@ export function emptyBoss(overrides: Partial<BossState> = {}): BossState {
 	};
 }
 
+export type HouseStatus = PlugStatus | 'boss';
+
 export interface HouseState {
 	id: HouseId;
+	/** Global plug counter (1..30). Thirty-one means every plug is cleared. */
 	room: number;
-	status: RoomStatus;
+	status: HouseStatus;
 	hp: number;
 	score: number;
 	boss: BossState;
 	answerLockUntil: number | null;
 	adjustmentCount: number;
 	connected: boolean;
+	/** Cleared global plug numbers, used for scoring and floor gates. */
 	solvedRooms: number[];
 	lastClearAt: number | null;
+	/** Server-dealt, shuffled question ids: 15 network, 5 sport, 10 general. */
+	questionOrder: string[];
+	/** Boss ids already beaten by this house; they can never be fought again. */
+	defeatedBosses: string[];
+	/** Earliest timestamp at which a knocked-out house may retry the boss. */
+	bossRetryAt: number | null;
 }
 
 export interface GameMeta {

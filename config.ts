@@ -6,7 +6,11 @@
 export const defaults = {
 	game: {
 		durationMinutes: 90,
-		roomCount: 10,
+		/** Five indoor floors. Each floor has six question plugs and one boss. */
+		floorCount: 5,
+		plugsPerFloor: 6,
+		/** A knocked-out house must wait this long before retrying the same boss. */
+		bossRetryDelaySeconds: 120,
 		wrongAnswerLockSeconds: 10,
 		stunSeconds: 4,
 		lockEscalationSeconds: [30, 60, 90, 120, 150],
@@ -28,10 +32,11 @@ export const defaults = {
 			'quilt', 'river', 'spoon', 'table', 'umbrella', 'violin', 'water', 'yellow',
 			'zebra', 'bottle', 'candle', 'dragon', 'empty', 'forest'
 		],
-		/** Add as many entries as you want in /admin. Answers stay server-side. */
+		/** One boss per floor. Add as many entries as you want in /admin. Answers stay server-side. */
 		bosses: [
 			{
 				id: 'staff',
+				floor: 1,
 				name: 'Staff',
 				title: 'STAFF // FLOOR 1',
 				question: 'The staff guards the lift. Type the access phrase from the parking lot sign.',
@@ -69,8 +74,9 @@ export const defaults = {
 			},
 			{
 				id: 'janitor',
+				floor: 2,
 				name: 'Janitor',
-				title: 'JANITOR // LOST FLOOR',
+				title: 'JANITOR // FLOOR 2',
 				question: 'The cleaner mops the infinite white halls. Name the place you are trapped in.',
 				answers: ['backrooms', 'the backrooms'],
 				wordPool: [
@@ -102,6 +108,118 @@ export const defaults = {
 				swapCooldownSeconds: 25,
 				rankShieldPercent: [60, 80, 100],
 				attacks: ['MOP SWEEP', 'BUCKET', 'SLIP', 'DRAIN', 'WAX', 'VACUUM']
+			},
+			{
+				id: 'receptionist',
+				floor: 3,
+				name: 'Receptionist',
+				title: 'RECEPTIONIST // FLOOR 3',
+				question: 'The receptionist stamps your pass at the front desk. Where are you checking in?',
+				answers: ['front desk', 'the front desk', 'reception', 'check-in'],
+				wordPool: [
+					'form', 'stamp', 'pass', 'desk', 'bell', 'file', 'pen', 'paper',
+					'badge', 'queue', 'sign', 'lobby', 'clerk', 'card', 'book', 'clock'
+				],
+				hp: 1300,
+				playerHp: 100,
+				shieldPerWord: 12,
+				shieldMax: 120,
+				chipPerWord: 7,
+				chipFloor: 0.1,
+				showNextWords: true,
+				comboBreakEvery: 10,
+				comboBreakPercent: 22,
+				comboBreakStackPercent: 10,
+				attackEverySeconds: 2.5,
+				attackDamage: 19,
+				wrongHealPercent: 25,
+				counterDamage: 35,
+				bpm: 155,
+				stunSeconds: 4,
+				stunPenalty: 75,
+				answerLockSeconds: [30, 60, 90, 120, 150],
+				answerLockCapSeconds: 180,
+				bossHealOnStunPercent: 20,
+				invulnAfterStunSeconds: 4,
+				swapInvulnSeconds: 2,
+				swapCooldownSeconds: 25,
+				rankShieldPercent: [60, 80, 100],
+				attacks: ['STAMP', 'PAPERCUT', 'QUEUE', 'FILE', 'DENIED', 'RESCHEDULE']
+			},
+			{
+				id: 'security',
+				floor: 4,
+				name: 'Security',
+				title: 'SECURITY // FLOOR 4',
+				question: 'The guard watches the endless cameras. Name the passage between the rooms.',
+				answers: ['corridor', 'the corridor', 'hallway', 'the hallway'],
+				wordPool: [
+					'camera', 'guard', 'patrol', 'gate', 'sensor', 'alarm', 'badge', 'key',
+					'monitor', 'shield', 'vest', 'radio', 'scan', 'log', 'post', 'sector'
+				],
+				hp: 1400,
+				playerHp: 100,
+				shieldPerWord: 13,
+				shieldMax: 130,
+				chipPerWord: 7,
+				chipFloor: 0.1,
+				showNextWords: true,
+				comboBreakEvery: 10,
+				comboBreakPercent: 24,
+				comboBreakStackPercent: 10,
+				attackEverySeconds: 2.3,
+				attackDamage: 21,
+				wrongHealPercent: 22,
+				counterDamage: 40,
+				bpm: 160,
+				stunSeconds: 4,
+				stunPenalty: 80,
+				answerLockSeconds: [30, 60, 90, 120, 150],
+				answerLockCapSeconds: 180,
+				bossHealOnStunPercent: 18,
+				invulnAfterStunSeconds: 4,
+				swapInvulnSeconds: 1.5,
+				swapCooldownSeconds: 22,
+				rankShieldPercent: [60, 80, 100],
+				attacks: ['TASER', 'CAMERA', 'PATROL', 'LOCKDOWN', 'SIREN', 'SEARCH']
+			},
+			{
+				id: 'manager',
+				floor: 5,
+				name: 'Manager',
+				title: 'MANAGER // FINAL FLOOR',
+				question: 'The manager holds the master key to every floor. What opens the final lift?',
+				answers: ['master key', 'the master key', 'key', 'a key'],
+				wordPool: [
+					'briefcase', 'meeting', 'deadline', 'clipboard', 'office', 'schedule',
+					'contract', 'elevator', 'password', 'calendar', 'folder', 'stapler',
+					'phone', 'desk', 'chair', 'final'
+				],
+				hp: 1600,
+				playerHp: 100,
+				shieldPerWord: 14,
+				shieldMax: 140,
+				chipPerWord: 8,
+				chipFloor: 0.1,
+				showNextWords: true,
+				comboBreakEvery: 10,
+				comboBreakPercent: 25,
+				comboBreakStackPercent: 10,
+				attackEverySeconds: 2.1,
+				attackDamage: 23,
+				wrongHealPercent: 20,
+				counterDamage: 45,
+				bpm: 170,
+				stunSeconds: 4,
+				stunPenalty: 90,
+				answerLockSeconds: [30, 60, 90, 120, 150],
+				answerLockCapSeconds: 180,
+				bossHealOnStunPercent: 15,
+				invulnAfterStunSeconds: 4,
+				swapInvulnSeconds: 1.5,
+				swapCooldownSeconds: 20,
+				rankShieldPercent: [60, 80, 100],
+				attacks: ['MEETING', 'DEADLINE', 'AUDIT', 'MEMO', 'REVIEW', 'TERMINATE']
 			}
 		]
 	}

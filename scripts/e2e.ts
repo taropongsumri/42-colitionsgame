@@ -71,6 +71,14 @@ function waitForMessage(
 	});
 }
 
+// Flush in-flight messages by round-tripping a ping, then inspect the log.
+async function flush(socketToFlush: WebSocket, source: Message[]): Promise<void> {
+	const sentAt = Date.now() + Math.random();
+	const from = source.length;
+	socketToFlush.send(JSON.stringify({ type: 'ping', sentAt }));
+	await waitForMessage('pong', from, (m) => m.sentAt === sentAt, 5000, source);
+}
+
 let socketStatus = 'connecting';
 socket.onmessage = (event) => {
 	messages.push(JSON.parse(String(event.data)) as Message);
@@ -103,29 +111,52 @@ assert(ghostUpdate.houses.some((ghost: any) => ghost.house === 'h1'), 'move broa
 
 // 6. Phase 2 quiz flow: interact, wrong answer lock, correct answer, scoreboard.
 const { getStore } = await import('../src/lib/server/db');
-const { questionFor } = await import('../src/lib/server/game/dungeon');
+const { dealAllHouses, questionFor } = await import('../src/lib/server/game/dungeon');
 const { realTableFor } = await import('../src/lib/shared/dungeon');
 const store = await getStore();
 const questions = await store.listQuestions();
-assert(questions.length >= 10, 'questions are seeded');
+assert(questions.length === 90, 'all 90 questions are seeded');
+assert(new Set(questions.map((question) => question.id)).size === 90, 'question IDs are unique');
+assert(new Set(questions.map((question) => question.question)).size === 90, 'question text is unique');
+const categoryCounts = questions.reduce<Record<string, number>>((counts, question) => {
+	counts[question.category] = (counts[question.category] ?? 0) + 1;
+	return counts;
+}, {});
+assert(categoryCounts.network === 45, '45 network questions are seeded');
+assert(categoryCounts.sport === 15, '15 sport questions are seeded');
+assert(categoryCounts.general === 30, '30 general questions are seeded');
+assert(
+	questions.every((question) => question.acceptedAnswers.includes(question.answer)),
+	'canonical answer is always accepted'
+);
 
 const house = await store.getHouse('h1');
 assert(house !== null, 'h1 house state exists');
 house!.room = 1;
 house!.solvedRooms = [];
 house!.score = 0;
+house!.status = 'open';
+house!.defeatedBosses = [];
+house!.bossRetryAt = null;
+house!.boss.active = false;
+house!.boss.mode = 'idle';
 house!.answerLockUntil = null;
+house!.questionOrder = dealAllHouses(questions).h1;
 await store.saveHouse(house!);
 
 const question = await questionFor('h1', 1);
 assert(question !== null, 'question available for h1 room 1');
-assert(realTableFor('h1', 1) === 'f1-r1', 'room 1 uses the ported map table f1-r1');
-assert(realTableFor('h1', 6) === 'f2-r1', 'room 6 uses floor 2 table f2-r1');
+assert(realTableFor('h1', 1) === 'f1-r1', 'plug 1 uses the ported map table f1-r1');
+assert(realTableFor('h1', 6) === 'f1-r6', 'plug 6 is the last table on floor 1');
+assert(realTableFor('h1', 7) === 'f2-r1', 'plug 7 starts floor 2');
 
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'interact', tableId: realTableFor('h1', 1) }));
 const asked = await waitForMessage('question', cursor);
-assert(asked.room === 1 && asked.prompt === question!.question, 'terminal question received');
+assert(asked.room === 1 && asked.floor === 1 && asked.plug === 1, 'floor/plug question received');
+assert(asked.prompt === question!.question, 'terminal prompt received');
+assert(typeof asked.plugId === 'string' && asked.plugId === 'f1-r1', 'plug id reaches the client');
+assert(!JSON.stringify(asked).includes(question!.answer), 'question answers are never sent to players');
 
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'answer', roomId: 'r1', answer: 'definitely-wrong' }));
@@ -160,19 +191,26 @@ assert(board.rows.find((row) => row.house === 'h1')?.score > 0, 'scoreboard refl
 // 7. Live config round trip.
 const configGet = (await (
 	await fetch(`${base}/api/admin/config`, { headers: adminHeaders })
-).json()) as { config: { game: { roomCount: number } } };
-assert(configGet.config.game.roomCount === 10, 'default config served');
+).json()) as {
+	config: {
+		game: { floorCount: number; plugsPerFloor: number; bossRetryDelaySeconds: number; durationMinutes: number };
+	};
+};
+assert(configGet.config.game.floorCount === 5, 'five floors are configured');
+assert(configGet.config.game.plugsPerFloor === 6, 'six plugs per floor are configured');
+assert(configGet.config.game.bossRetryDelaySeconds === 120, 'boss retry delay defaults to 120s');
+assert(configGet.config.game.durationMinutes === 90, 'default game duration is 90 minutes');
 
 const put = await fetch(`${base}/api/admin/config`, {
 	method: 'PUT',
 	headers: adminHeaders,
-	body: JSON.stringify({ config: { game: { roomCount: 12 } } })
+	body: JSON.stringify({ config: { game: { floorCount: 6 } } })
 });
 assert(put.ok, 'config saved');
 const changed = (await (
 	await fetch(`${base}/api/admin/config`, { headers: adminHeaders })
-).json()) as { config: { game: { roomCount: number } } };
-assert(changed.config.game.roomCount === 12, 'live config override applied');
+).json()) as { config: { game: { floorCount: number } } };
+assert(changed.config.game.floorCount === 6, 'live config override applied');
 
 const reset = await fetch(`${base}/api/admin/config/reset`, {
 	method: 'POST',
@@ -181,8 +219,8 @@ const reset = await fetch(`${base}/api/admin/config/reset`, {
 assert(reset.ok, 'config reset');
 const restored = (await (
 	await fetch(`${base}/api/admin/config`, { headers: adminHeaders })
-).json()) as { config: { game: { roomCount: number } } };
-assert(restored.config.game.roomCount === 10, 'defaults restored');
+).json()) as { config: { game: { floorCount: number } } };
+assert(restored.config.game.floorCount === 5, 'defaults restored');
 
 // 7a. Per-boss switches survive the live config round trip.
 const bossDefaults = (await (
@@ -245,7 +283,7 @@ assert(logData.configHistory.length > 0, 'config history is exposed to admin');
 const questionResponse = await fetch(`${base}/api/admin/questions`, { headers: adminHeaders });
 assert(questionResponse.ok, 'question bank API responds');
 const originalQuestions = ((await questionResponse.json()) as { questions: unknown[] }).questions;
-assert(originalQuestions.length >= 10, 'question bank lists seeded questions');
+assert(originalQuestions.length === 90, 'question bank lists all seeded questions');
 const temporaryQuestions = [{ ...(originalQuestions[0] as object), question: 'Phase 4 temporary question' }];
 const savedQuestions = await fetch(`${base}/api/admin/questions`, {
 	method: 'PUT',
@@ -278,21 +316,25 @@ const discordTest = (await (
 ).json()) as { ok: boolean; reason?: string };
 assert(discordTest.ok === false && discordTest.reason === 'disabled', 'Discord test reports disabled webhook');
 
-// 7d. Spectator key gate, read-only orb, visibility toggle and admin global hide.
+// 7d. Spectators are read-only, skinned orbs that only other spectators see.
 const badKey = await fetch(`${base}/ws/spectate?key=wrong-key`, {
 	headers: { upgrade: 'websocket' }
 }).catch(() => null);
 assert(badKey?.status === 401, 'spectator key gate rejects an invalid key');
 
 const spectatorMessages: Message[] = [];
+const otherSpectatorMessages: Message[] = [];
 const spectatorSocket = new WebSocket(`${wsBase}/ws/spectate?key=spectate`);
 let spectatorStatus = 'connecting';
-spectatorSocket.onmessage = (event) => {
-	spectatorMessages.push(JSON.parse(String(event.data)) as Message);
-	for (const listener of listeners) listener();
-};
-spectatorSocket.onopen = () => (spectatorStatus = 'open');
-spectatorSocket.onerror = () => (spectatorStatus = 'error');
+function watchSpectator(target: WebSocket, source: Message[]) {
+	target.onmessage = (event) => {
+		source.push(JSON.parse(String(event.data)) as Message);
+		for (const listener of listeners) listener();
+	};
+	target.onopen = () => (spectatorStatus = 'open');
+	target.onerror = () => (spectatorStatus = 'error');
+}
+watchSpectator(spectatorSocket, spectatorMessages);
 const spectatorWelcome = await waitForMessage(
 	'spectator.welcome',
 	0,
@@ -301,88 +343,124 @@ const spectatorWelcome = await waitForMessage(
 	spectatorMessages
 );
 assert(spectatorStatus === 'open', 'spectator websocket opened with the correct key');
-assert(spectatorWelcome.visible === true && spectatorWelcome.orbsHidden === false, 'spectator orb starts visible');
+assert(
+	spectatorWelcome.visible === true && spectatorWelcome.orbsHidden === false,
+	'spectator orb starts visible'
+);
+assert(spectatorWelcome.skin === 'fire', 'spectator orb defaults to the fire skin');
 const orbId = String(spectatorWelcome.id);
 
 cursor = messages.length;
-let spectatorCursor = spectatorMessages.length;
 spectatorSocket.send(JSON.stringify({ type: 'spectatorMove', floor: 2, x: 150, y: 88 }));
-const spectatorSeenByPlayer = await waitForMessage(
-	'orbs',
-	cursor,
-	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.x === 150 && orb.y === 88)
+await flush(socket, messages);
+assert(
+	!messages.slice(cursor).some((message) => message.type === 'orbs'),
+	'players never receive spectator orb messages'
 );
 const spectatorSeenBySelf = await waitForMessage(
 	'orbs',
-	spectatorCursor,
-	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.floor === 2),
+	0,
+	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.floor === 2 && orb.x === 150),
 	5000,
 	spectatorMessages
 );
-assert(spectatorSeenByPlayer.orbs.some((orb: any) => orb.id === orbId), 'player socket receives spectator orb');
 assert(spectatorSeenBySelf.orbs.some((orb: any) => orb.id === orbId), 'spectator receives its own orb');
 
-cursor = messages.length;
-spectatorCursor = spectatorMessages.length;
-spectatorSocket.send(JSON.stringify({ type: 'spectatorVisible', visible: false }));
-const orbHiddenByOwner = await waitForMessage(
-	'orbs',
-	cursor,
-	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.visible === false)
+// A second spectator proves orbs are shared with spectators but not players.
+const otherSpectatorSocket = new WebSocket(`${wsBase}/ws/spectate?key=spectate`);
+watchSpectator(otherSpectatorSocket, otherSpectatorMessages);
+const otherWelcome = await waitForMessage(
+	'spectator.welcome',
+	0,
+	(m) => typeof m.id === 'string' && m.id.length > 0,
+	5000,
+	otherSpectatorMessages
 );
-assert(orbHiddenByOwner.orbs.some((orb: any) => orb.id === orbId && orb.visible === false), 'orb visibility toggle is broadcast');
-spectatorCursor = spectatorMessages.length;
+const otherOrbId = String(otherWelcome.id);
+assert(otherOrbId !== orbId, 'each spectator gets a unique orb id');
+await waitForMessage(
+	'orbs',
+	0,
+	(m) => m.orbs?.some((orb: any) => orb.id === orbId) && m.orbs?.some((orb: any) => orb.id === otherOrbId),
+	5000,
+	spectatorMessages
+);
+assert(true, 'spectators see each other flying through the backrooms');
+
+spectatorSocket.send(JSON.stringify({ type: 'spectatorSkin', skin: 'water' }));
+await waitForMessage(
+	'orbs',
+	0,
+	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.skin === 'water'),
+	5000,
+	otherSpectatorMessages
+);
+assert(true, 'fire/water orb skins are broadcast to other spectators');
+
+spectatorSocket.send(JSON.stringify({ type: 'spectatorVisible', visible: false }));
+await waitForMessage(
+	'orbs',
+	0,
+	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.visible === false),
+	5000,
+	otherSpectatorMessages
+);
+assert(true, 'orb visibility toggle is broadcast between spectators');
 spectatorSocket.send(JSON.stringify({ type: 'spectatorVisible', visible: true }));
 await waitForMessage(
 	'orbs',
-	spectatorCursor,
+	0,
 	(m) => m.orbs?.some((orb: any) => orb.id === orbId && orb.visible === true),
 	5000,
-	spectatorMessages
+	otherSpectatorMessages
 );
 assert(true, 'spectator can show its orb again');
 
 const roomBeforeSpectatorAnswer = (await store.getHouse('h1'))!.room;
-spectatorCursor = spectatorMessages.length;
 spectatorSocket.send(JSON.stringify({ type: 'answer', roomId: 'r1', answer: 'anything' }));
 const readOnly = await waitForMessage(
 	'error',
-	spectatorCursor,
+	0,
 	(m) => m.code === 'SPECTATOR_READ_ONLY',
 	5000,
 	spectatorMessages
 );
 assert(readOnly.code === 'SPECTATOR_READ_ONLY', 'spectators cannot submit answers');
-assert((await store.getHouse('h1'))!.room === roomBeforeSpectatorAnswer, 'spectator message does not change progress');
+assert(
+	(await store.getHouse('h1'))!.room === roomBeforeSpectatorAnswer,
+	'spectator messages never change progress'
+);
 
-cursor = messages.length;
-spectatorCursor = spectatorMessages.length;
 const hideOrbs = await fetch(`${base}/api/admin/control`, {
 	method: 'POST',
 	headers: adminHeaders,
 	body: JSON.stringify({ action: 'hideOrbs', hidden: true })
 });
 assert(hideOrbs.ok, 'admin can globally hide spectator orbs');
-await waitForMessage('orbsHidden', cursor, (m) => m.hidden === true);
-await waitForMessage('orbsHidden', spectatorCursor, (m) => m.hidden === true, 5000, spectatorMessages);
-assert(true, 'global orb hide reaches players and spectators');
+await waitForMessage('orbsHidden', 0, (m) => m.hidden === true, 5000, spectatorMessages);
+assert(true, 'global orb hide reaches spectators');
 
-cursor = messages.length;
 const showOrbs = await fetch(`${base}/api/admin/control`, {
 	method: 'POST',
 	headers: adminHeaders,
 	body: JSON.stringify({ action: 'hideOrbs', hidden: false })
 });
 assert(showOrbs.ok, 'admin can restore spectator orbs');
-await waitForMessage('orbsHidden', cursor, (m) => m.hidden === false);
+await waitForMessage('orbsHidden', 0, (m) => m.hidden === false, 5000, spectatorMessages);
 assert((await store.getMeta()).orbsHidden === false, 'global orb visibility restored in store');
 
-cursor = messages.length;
+otherSpectatorSocket.close();
+await waitForMessage(
+	'orbs',
+	0,
+	(m) => Array.isArray(m.orbs) && m.orbs.length === 1 && m.orbs[0].id === orbId,
+	5000,
+	spectatorMessages
+);
+assert(true, 'spectator orb disappears when that spectator leaves');
 spectatorSocket.close();
-await waitForMessage('orbs', cursor, (m) => Array.isArray(m.orbs) && m.orbs.length === 0);
-assert(true, 'spectator orb disappears when the spectator leaves');
 
-// 7b. Boss phase: lift unlock, server-owned answers, typing and audition.
+// 7b. Boss phase: one boss per floor, full heal, server-owned answers, retry gate.
 const bossConfig = (await (
 	await fetch(`${base}/api/admin/config`, { headers: adminHeaders })
 ).json()) as {
@@ -390,6 +468,9 @@ const bossConfig = (await (
 		boss: {
 			bosses: {
 				id: string;
+				floor: number;
+				name: string;
+				hp: number;
 				answers: string[];
 				showNextWords: boolean;
 				comboBreakEvery: number;
@@ -399,13 +480,24 @@ const bossConfig = (await (
 		};
 	};
 };
+assert(bossConfig.config.boss.bosses.length === 5, 'five floor bosses are configured');
+assert(
+	bossConfig.config.boss.bosses.map((boss) => boss.floor).join(',') === '1,2,3,4,5',
+	'every floor has its own boss'
+);
+assert(
+	bossConfig.config.boss.bosses.every((boss) => boss.answers.length > 0),
+	'boss answers stay in server config'
+);
 const configuredBoss = bossConfig.config.boss.bosses[0];
-assert(!!configuredBoss && configuredBoss.answers.length > 0, 'boss config is available');
 assert(configuredBoss.showNextWords === true, 'next-word preview is restored after config reset');
 
 const bossHouse = (await store.getHouse('h1'))!;
-bossHouse.room = 11;
-bossHouse.solvedRooms = Array.from({ length: 10 }, (_, index) => index + 1);
+bossHouse.room = 6;
+bossHouse.solvedRooms = Array.from({ length: 6 }, (_, index) => index + 1);
+bossHouse.status = 'boss';
+bossHouse.defeatedBosses = [];
+bossHouse.bossRetryAt = null;
 bossHouse.boss.active = false;
 bossHouse.answerLockUntil = null;
 await store.saveHouse(bossHouse);
@@ -413,7 +505,8 @@ await store.saveHouse(bossHouse);
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'enterBoss', bossId: configuredBoss.id }));
 const bossStart = await waitForMessage('boss.start', cursor);
-assert(bossStart.boss?.id === configuredBoss.id, 'boss fight started from the lift');
+assert(bossStart.boss?.id === configuredBoss.id, 'boss fight started from the floor 1 lift');
+assert(bossStart.hp === configuredBoss.hp && bossStart.maxHp === configuredBoss.hp, 'boss starts at full HP');
 assert(!JSON.stringify(bossStart).includes('"answers"'), 'boss answers are never sent to the client');
 assert(!JSON.stringify(bossStart).includes(configuredBoss.answers[0]), 'correct answer stays on the server');
 assert(bossStart.comboBreakEvery === configuredBoss.comboBreakEvery, 'combo break interval reaches the client');
@@ -498,12 +591,39 @@ for (let step = 0; step < configuredBoss.comboBreakEvery; step += 1) {
 }
 const defeatedHouse = (await store.getHouse('h1'))!;
 assert(defeatedHouse.boss.active === false, 'boss fight closes after the final combo break');
+assert(defeatedHouse.room === 7, 'floor 1 boss win opens floor 2 plug 1');
+assert(defeatedHouse.defeatedBosses.includes(configuredBoss.id), 'defeated boss is recorded on the house');
+await waitForMessage(
+	'boss.list',
+	0,
+	(m) => m.bosses?.some((boss: any) => boss.id === configuredBoss.id && boss.defeated === true),
+	5000
+);
+assert(true, 'boss list marks the floor 1 boss as defeated');
 
-// Re-enter a fresh fight so the secret-answer/audition path is still covered.
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'enterBoss', bossId: configuredBoss.id }));
+const defeatedError = await waitForMessage('error', cursor, (m) => m.code === 'BOSS_DEFEATED');
+assert(defeatedError.code === 'BOSS_DEFEATED', 'a defeated boss cannot be fought again');
+
+// Floor 2: admin can open the next lift, and its boss is a different fight.
+const forceBoss = await fetch(`${base}/api/admin/control`, {
+	method: 'POST',
+	headers: adminHeaders,
+	body: JSON.stringify({ action: 'forceBoss', house: 'h1' })
+});
+assert(forceBoss.ok, 'admin can open the current floor lift');
+const floorTwoBoss = bossConfig.config.boss.bosses.find((boss) => boss.floor === 2)!;
+assert(!!floorTwoBoss, 'floor 2 boss exists');
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'enterBoss', bossId: floorTwoBoss.id }));
 const secondStart = await waitForMessage('boss.start', cursor);
-assert(secondStart.boss?.id === configuredBoss.id, 'fresh boss starts after a combo win');
+assert(secondStart.boss?.id === floorTwoBoss.id, 'floor 2 boss starts from its own lift');
+assert(
+	secondStart.hp === floorTwoBoss.hp && secondStart.maxHp === floorTwoBoss.hp,
+	'every fight starts with a full boss HP bar'
+);
+assert(!JSON.stringify(secondStart).includes(floorTwoBoss.answers[0]), 'floor 2 secret answer stays server-side');
 
 cursor = messages.length;
 socket.send(JSON.stringify({ type: 'auditionSubmit', answer: 'definitely-wrong' }));
@@ -515,9 +635,44 @@ afterDenied.answerLockUntil = null;
 await store.saveHouse(afterDenied);
 
 cursor = messages.length;
-socket.send(JSON.stringify({ type: 'auditionSubmit', answer: configuredBoss.answers[0] }));
+socket.send(JSON.stringify({ type: 'auditionSubmit', answer: floorTwoBoss.answers[0] }));
 const audition = await waitForMessage('boss.audition', cursor);
 assert(audition.length > 0, 'correct boss answer starts a timed audition');
+
+// Knockout sets a server-enforced retry delay, which admin can clear.
+const fighting = (await store.getHouse('h1'))!;
+fighting.boss.mode = 'typing';
+fighting.boss.audition = null;
+fighting.boss.playerHp = 1;
+fighting.boss.attackAt = 0;
+await store.saveHouse(fighting);
+await waitForMessage('boss.stun', 0, () => true, 5000);
+const stunned = (await store.getHouse('h1'))!;
+stunned.boss.stunUntil = Date.now() - 1;
+await store.saveHouse(stunned);
+const knockout = await waitForMessage('boss.end', 0, (m) => m.reason === 'knockout', 5000);
+assert(knockout.retryAt > Date.now(), 'knockout schedules a future retry time');
+assert((await store.getHouse('h1'))!.status === 'boss', 'knocked-out house waits at the boss lift');
+
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'enterBoss', bossId: floorTwoBoss.id }));
+const retryError = await waitForMessage('error', cursor, (m) => m.code === 'BOSS_RETRY');
+assert(retryError.code === 'BOSS_RETRY', 'server blocks retries until the delay expires');
+
+const clearRetry = await fetch(`${base}/api/admin/control`, {
+	method: 'POST',
+	headers: adminHeaders,
+	body: JSON.stringify({ action: 'clearBossRetry', house: 'h1' })
+});
+assert(clearRetry.ok, 'admin can clear a boss retry delay');
+cursor = messages.length;
+socket.send(JSON.stringify({ type: 'enterBoss', bossId: floorTwoBoss.id }));
+const retryStart = await waitForMessage('boss.start', cursor);
+assert(retryStart.boss?.id === floorTwoBoss.id, 'boss can be re-entered after admin clears the delay');
+assert(
+	retryStart.hp === floorTwoBoss.hp && retryStart.maxHp === floorTwoBoss.hp,
+	'boss HP is fully healed on the retry attempt'
+);
 
 // 8. Kick revokes the session and closes the socket.
 const closed = new Promise<void>((resolve) => {

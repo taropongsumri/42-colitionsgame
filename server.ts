@@ -6,6 +6,7 @@ import {
 	type ClientMessage,
 	type ServerMessage
 } from './src/lib/shared/protocol';
+import { FLOORS, floorAndPlug, floorForRoom } from './src/lib/shared/map';
 import type { HouseId } from './src/lib/shared/types';
 import { getStore } from './src/lib/server/db';
 import { emptyBoss } from './src/lib/server/db/types';
@@ -51,6 +52,8 @@ const sockets = new Set<ServerWebSocket<SocketData>>();
 const ghostPositions = new Map<HouseId, GhostState>();
 /** Spectator orbs are cosmetic and pass through walls; no answers or progress. */
 const orbPositions = new Map<string, OrbState>();
+/** Cosmetic fire/water skin chosen by each spectator. */
+const spectatorSkins = new Map<string, 'fire' | 'water'>();
 
 let appFetch: AppFetch;
 if (env.mode === 'prod') {
@@ -95,33 +98,53 @@ async function sendScoreboard(): Promise<void> {
 	broadcast(await scoreboard());
 }
 
+async function sendBossList(house: HouseId): Promise<void> {
+	const store = await getStore();
+	sendToHouse(house, bossList(await liveConfig(), await store.getHouse(house)));
+}
+
 function ghostMessage(): ServerMessage {
 	return { type: 'ghosts', houses: [...ghostPositions.values()] };
 }
 
 function orbMessage(): ServerMessage {
-	return { type: 'orbs', orbs: [...orbPositions.values()] };
+	return {
+		type: 'orbs',
+		orbs: [...orbPositions.values()].map((orb) => ({
+			...orb,
+			skin: spectatorSkins.get(orb.id) ?? 'fire'
+		}))
+	};
+}
+
+function sendToSpectators(message: ServerMessage): void {
+	for (const ws of sockets) {
+		if (ws.data.path === '/ws/spectate') send(ws, message);
+	}
 }
 
 function broadcastOrbs(): void {
-	broadcast(orbMessage());
+	// Players must never see spectator orbs; they are cosmetic and spectator-only.
+	sendToSpectators(orbMessage());
 }
 
 async function shadows(): Promise<ServerMessage> {
-	const store = await getStore();
+	const [store, config] = await Promise.all([getStore(), liveConfig()]);
 	const houses = await store.listHouses();
 	return {
 		type: 'shadows',
 		houses: houses.map((house) => ({
 			house: house.id,
 			room: house.room,
+			floor: floorForRoom(house.room),
+			plug: ((house.room - 1) % config.game.plugsPerFloor) + 1,
 			connected: house.connected
 		}))
 	};
 }
 
 async function scoreboard(): Promise<ServerMessage> {
-	const store = await getStore();
+	const [store, config] = await Promise.all([getStore(), liveConfig()]);
 	const [houses, meta, left] = await Promise.all([
 		store.listHouses(),
 		store.getMeta(),
@@ -133,6 +156,8 @@ async function scoreboard(): Promise<ServerMessage> {
 			house: house.id,
 			score: house.score,
 			room: house.room,
+			floor: floorForRoom(house.room),
+			plug: ((house.room - 1) % config.game.plugsPerFloor) + 1,
 			hp: house.hp
 		})),
 		timeLeftMs: left,
@@ -207,7 +232,10 @@ const server = Bun.serve<SocketData>({
 		}
 
 		if (url.pathname === '/internal/orbs-hidden' && request.method === 'POST') {
-			broadcast({ type: 'orbsHidden', hidden: url.searchParams.get('hidden') === 'true' });
+			sendToSpectators({
+				type: 'orbsHidden',
+				hidden: url.searchParams.get('hidden') === 'true'
+			});
 			return new Response(null, { status: 204 });
 		}
 
@@ -289,11 +317,20 @@ const server = Bun.serve<SocketData>({
 			if (ws.data.path === '/ws/spectate' && ws.data.spectatorId) {
 				const store = await getStore();
 				const meta = await store.getMeta();
+				const spawn = FLOORS[0].spawn;
+				orbPositions.set(ws.data.spectatorId, {
+					id: ws.data.spectatorId,
+					floor: 1,
+					x: spawn.x,
+					y: spawn.y,
+					visible: ws.data.visible
+				});
 				send(ws, {
 					type: 'spectator.welcome',
 					id: ws.data.spectatorId,
 					visible: ws.data.visible,
-					orbsHidden: meta.orbsHidden
+					orbsHidden: meta.orbsHidden,
+					skin: spectatorSkins.get(ws.data.spectatorId) ?? 'fire'
 				});
 				send(ws, orbMessage());
 				send(ws, ghostMessage());
@@ -311,19 +348,19 @@ const server = Bun.serve<SocketData>({
 				house: ws.data.house,
 				accepted: ws.data.accepted
 			});
+			// No orb/orbsHidden messages to players: spectator orbs are invisible to them.
 			send(ws, ghostMessage());
-			send(ws, orbMessage());
-			send(ws, { type: 'orbsHidden', hidden: (await (await getStore()).getMeta()).orbsHidden });
-			send(ws, bossList(await liveConfig()));
+
+			const state = ws.data.house ? await (await getStore()).getHouse(ws.data.house) : null;
+			send(ws, bossList(await liveConfig(), state));
 
 			if (ws.data.house) {
-				const store = await getStore();
-				const state = await store.getHouse(ws.data.house);
 				if (state) {
 					send(ws, { type: 'state', state });
 					send(ws, {
 						type: 'dungeon',
 						current: state.room,
+						...floorAndPlug(state.room),
 						rooms: await roomStatuses(state)
 					});
 					const active = activeStart(state, await liveConfig());
@@ -373,6 +410,11 @@ const server = Bun.serve<SocketData>({
 					broadcastOrbs();
 					return;
 				}
+				if (message.type === 'spectatorSkin' && ws.data.spectatorId) {
+					spectatorSkins.set(ws.data.spectatorId, message.skin);
+					broadcastOrbs();
+					return;
+				}
 				send(ws, {
 					type: 'error',
 					code: 'SPECTATOR_READ_ONLY',
@@ -415,6 +457,7 @@ const server = Bun.serve<SocketData>({
 				if (result.progressChanged) {
 					broadcast(await shadows());
 					broadcast(await scoreboard());
+					await sendBossList(ws.data.house);
 				}
 				return;
 			}
@@ -434,6 +477,7 @@ const server = Bun.serve<SocketData>({
 				if (result.progressChanged) {
 					broadcast(await shadows());
 					await sendScoreboard();
+					await sendBossList(ws.data.house);
 				}
 				return;
 			}
@@ -448,6 +492,7 @@ const server = Bun.serve<SocketData>({
 			sockets.delete(ws);
 			if (ws.data.path === '/ws/spectate' && ws.data.spectatorId) {
 				orbPositions.delete(ws.data.spectatorId);
+				spectatorSkins.delete(ws.data.spectatorId);
 				broadcastOrbs();
 				return;
 			}
@@ -480,6 +525,7 @@ const bossTimer = setInterval(async () => {
 		if (tick.progressChanged) {
 			broadcast(await shadows());
 			await sendScoreboard();
+			for (const house of tick.byHouse.keys()) await sendBossList(house);
 		}
 	} catch (error) {
 		console.error('[boss] tick failed', error);

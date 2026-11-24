@@ -1,5 +1,6 @@
 // Read-only spectator client: a light orb that flies through walls and ignores fog.
 import { FLOORS, type FloorMap } from '../shared/map';
+import type { SpectatorSkin } from '../shared/types';
 import { renderFloor, type Actor } from './render';
 
 const BASE_W = 320;
@@ -14,11 +15,13 @@ export type SpectatorOrb = {
 	x: number;
 	y: number;
 	visible: boolean;
+	skin?: SpectatorSkin;
 };
 
 export type SpectatorOptions = {
 	canvas: HTMLCanvasElement;
 	onMove?: (position: { floor: number; x: number; y: number }) => void;
+	onSkin?: (skin: SpectatorSkin) => void;
 };
 
 function colorFor(id: string): string {
@@ -42,6 +45,8 @@ export function createSpectator(options: SpectatorOptions) {
 	let raf = 0;
 	let last = performance.now();
 	let t = 0;
+	let skin: SpectatorSkin = 'fire';
+	let orbsHidden = false;
 
 	function resize() {
 		const rect = options.canvas.getBoundingClientRect();
@@ -70,7 +75,22 @@ export function createSpectator(options: SpectatorOptions) {
 		if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
 		const key = event.key.toLowerCase();
 		if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' '].includes(key)) event.preventDefault();
-		if (/^[1-5]$/.test(key)) setFloor(Number(key));
+		if (/^[0-5]$/.test(key)) setFloor(Number(key));
+		if (key === 'b') {
+			const lift = map.props.find((prop) => prop.kind === 'elevator');
+			if (lift) {
+				pos.x = lift.x;
+				pos.y = lift.y + 5;
+			}
+		}
+		if (key === 'z' && skin !== 'fire') {
+			skin = 'fire';
+			options.onSkin?.(skin);
+		}
+		if (key === 'x' && skin !== 'water') {
+			skin = 'water';
+			options.onSkin?.(skin);
+		}
 		keys.add(key);
 	};
 	const onKeyUp = (event: KeyboardEvent) => keys.delete(event.key.toLowerCase());
@@ -116,19 +136,29 @@ export function createSpectator(options: SpectatorOptions) {
 		};
 		const actors: Actor[] = [];
 		for (const orb of orbs.values()) {
-			if (orb.floor !== map.floor) continue;
+			if (orbsHidden || orb.floor !== map.floor) continue;
 			actors.push({
 				x: orb.x,
 				y: orb.y,
 				img: null,
-				orb: colorFor(orb.id),
+				orb: orb.skin ? (orb.skin === 'fire' ? '#ff7a18' : '#3ab4ff') : colorFor(orb.id),
+				skin: orb.skin,
 				bob: Math.sin(t * 3 + orb.x) * 3
 			});
 		}
+		actors.push({
+			x: pos.x,
+			y: pos.y,
+			img: null,
+			orb: skin === 'fire' ? '#ff7a18' : '#3ab4ff',
+			skin,
+			bob: Math.sin(t * 4) * 2
+		});
 		renderFloor(ctx, map, cam, view, actors, t, {
 			solved: new Set<string>(),
 			near: null,
 			highlight: null,
+			bossGate: map.floor > 0,
 			background
 		});
 		raf = requestAnimationFrame(frame);
@@ -147,6 +177,12 @@ export function createSpectator(options: SpectatorOptions) {
 		setOrbs(list: SpectatorOrb[]) {
 			orbs.clear();
 			for (const orb of list) orbs.set(orb.id, orb);
+		},
+		setSkin(next: SpectatorSkin) {
+			skin = next;
+		},
+		setOrbsHidden(hidden: boolean) {
+			orbsHidden = hidden;
 		},
 		setFloor,
 		get running() {

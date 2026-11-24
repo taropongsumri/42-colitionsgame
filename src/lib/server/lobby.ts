@@ -30,7 +30,10 @@ async function ensureHouses(store: Store): Promise<void> {
 				adjustmentCount: 0,
 				connected: false,
 				solvedRooms: [],
-				lastClearAt: null
+				lastClearAt: null,
+				questionOrder: [],
+				defeatedBosses: [],
+				bossRetryAt: null
 			};
 			await store.saveHouse(house);
 		}
