@@ -378,6 +378,7 @@ export function createGame(options: GameOptions) {
 			near: near?.roomId ?? null,
 			highlight,
 			next: nextPlug,
+			player: { x: pos.x, y: pos.y },
 			background: backgroundImage
 		});
 
