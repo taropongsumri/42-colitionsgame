@@ -6,6 +6,7 @@ import type { LiveConfig } from '../../../../config';
 import {
 	FLOOR_COUNT,
 	TOTAL_QUESTION_SLOTS,
+	floorAndPlug,
 	floorForRoom,
 	roomForFloorPlug
 } from '../../shared/map';
@@ -17,6 +18,7 @@ import { getStore } from '../db';
 import { emptyBoss, type BossState, type HouseState } from '../db/types';
 import { notifyDiscord } from '../discord';
 import { normalizeAnswer } from './answer';
+import { roomStatuses } from './dungeon';
 import { bonusPercent } from './scoring';
 
 type BossConfig = LiveConfig['boss']['bosses'][number];
@@ -578,6 +580,12 @@ async function finishBoss(house: HouseState, config: LiveConfig): Promise<Server
 			floor
 		},
 		{ type: 'state', state: house },
+		{
+			type: 'dungeon',
+			current: house.room,
+			...floorAndPlug(house.room),
+			rooms: await roomStatuses(house)
+		},
 		{
 			type: 'notice',
 			text: `${HOUSES[house.id].name} defeated ${boss?.name ?? 'the boss'}${

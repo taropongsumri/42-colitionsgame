@@ -383,6 +383,22 @@ describe('phase 2 gameplay', () => {
 		const done = (await store.getHouse('h2'))!;
 		expect(done.boss.active).toBe(false);
 		expect(done.boss.wordIndex).toBe(totalWords);
+
+		// The bottom-left checkpoint strip must restart at 0 solved on the next floor.
+		const dungeon = lastMessages.messages.find(
+			(message) => (message as { type?: string }).type === 'dungeon'
+		) as Record<string, unknown> | undefined;
+		expect(dungeon).toMatchObject({
+			type: 'dungeon',
+			current: done.room,
+			rooms: [
+				{ number: 1, status: 'open' },
+				...Array.from({ length: config.game.plugsPerFloor - 1 }, (_, index) => ({
+					number: index + 2,
+					status: 'locked'
+				}))
+			]
+		});
 	});
 
 	test('knockout waits for the death delay, then exits the dungeon', async () => {
