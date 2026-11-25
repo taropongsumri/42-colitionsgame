@@ -3,6 +3,29 @@
  * Secrets come from environment variables; defaults live here.
  */
 
+import { readFileSync } from 'node:fs';
+
+type EnvRecord = Record<string, string | undefined>;
+
+/** Vite SSR runs under Node in dev; read .env there so it matches the Bun process. */
+function loadRuntimeEnv(): EnvRecord {
+	if (typeof Bun !== 'undefined') return Bun.env as EnvRecord;
+	try {
+		const parsed: EnvRecord = {};
+		for (const line of readFileSync('.env', 'utf8').split('\n')) {
+			const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/.exec(line);
+			if (!match) continue;
+			const value = match[2].replace(/^(['"])(.*)\1$/, '$2');
+			parsed[match[1]] = value;
+		}
+		return { ...parsed, ...process.env };
+	} catch {
+		return process.env;
+	}
+}
+
+const runtimeEnv = loadRuntimeEnv();
+
 export const defaults = {
 	game: {
 		durationMinutes: 90,
@@ -228,19 +251,19 @@ export const defaults = {
 export type LiveConfig = typeof defaults;
 
 export const env = {
-	port: Number(Bun.env.PORT ?? 3000),
-	mode: Bun.env.MODE ?? 'dev',
-	viteOrigin: Bun.env.VITE_ORIGIN ?? 'http://localhost:5173',
-	mongoUri: Bun.env.MONGO_URI?.trim() || null,
-	dataDir: Bun.env.DATA_DIR ?? './data',
-	adminPassword: Bun.env.ADMIN_PASSWORD ?? 'admin',
-	spectatorKey: Bun.env.SPECTATOR_KEY ?? 'spectate',
+	port: Number(runtimeEnv.PORT ?? 3000),
+	mode: runtimeEnv.MODE ?? 'dev',
+	viteOrigin: runtimeEnv.VITE_ORIGIN ?? 'http://localhost:5173',
+	mongoUri: runtimeEnv.MONGO_URI?.trim() || null,
+	dataDir: runtimeEnv.DATA_DIR ?? './data',
+	adminPassword: runtimeEnv.ADMIN_PASSWORD ?? 'admin',
+	spectatorKey: runtimeEnv.SPECTATOR_KEY ?? 'spectate',
 	/** Shared secret for /internal/* control calls. Empty in prod = fail closed. */
 	internalSecret:
-		Bun.env.INTERNAL_SECRET?.trim() || (Bun.env.MODE === 'prod' ? '' : 'dev-internal'),
+		runtimeEnv.INTERNAL_SECRET?.trim() || (runtimeEnv.MODE === 'prod' ? '' : 'dev-internal'),
 	/** External browser origin when deployed behind a TLS reverse proxy. */
-	publicOrigin: Bun.env.PUBLIC_ORIGIN?.trim() || null,
-	discordWebhookUrl: Bun.env.DISCORD_WEBHOOK_URL?.trim() || null
+	publicOrigin: runtimeEnv.PUBLIC_ORIGIN?.trim() || null,
+	discordWebhookUrl: runtimeEnv.DISCORD_WEBHOOK_URL?.trim() || null
 };
 
 function merge<T>(base: T, override: unknown): T {
