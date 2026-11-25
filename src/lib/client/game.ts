@@ -3,10 +3,8 @@
 import {
 	FLOORS,
 	TILE,
-	TOTAL_QUESTION_SLOTS,
 	QUESTIONS_PER_FLOOR,
 	floorForRoom,
-	questionTableIdForRoom,
 	type FloorMap,
 	type Prop
 } from '../shared/map';
@@ -116,9 +114,6 @@ export function createGame(options: GameOptions) {
 	let currentPlug = 1;
 	let bossRetryAt: number | null = null;
 
-	let currentRoom = 1;
-	let highlight: string | null = questionTableIdForRoom(1);
-	let nextPlug: string | null = null;
 	let near: Prop | null = null;
 	let open = false;
 	let paused = false;
@@ -268,12 +263,9 @@ export function createGame(options: GameOptions) {
 				emitHud('Waiting for admin to open the building');
 				return;
 			}
-			const isCurrent = near.roomId === highlight;
-			const prompt = !isCurrent
-				? 'E · Check this socket'
-				: solved.has(near.roomId)
-					? 'Cleared ✓ · E to view the question'
-					: 'E · Plug in and answer';
+			const prompt = solved.has(near.roomId)
+				? 'Cleared ✓ · E to view the question'
+				: 'E · Plug in and answer';
 			emitHud(prompt);
 			if (pressed) options.onInteract?.(near.roomId);
 			return;
@@ -376,9 +368,6 @@ export function createGame(options: GameOptions) {
 		renderFloor(ctx, map, cam, view, actors, t, {
 			solved,
 			near: near?.roomId ?? null,
-			highlight,
-			next: nextPlug,
-			player: { x: pos.x, y: pos.y },
 			background: backgroundImage
 		});
 
@@ -433,11 +422,9 @@ export function createGame(options: GameOptions) {
 			window.removeEventListener('resize', resize);
 		},
 		setRoom(room: number) {
-			currentRoom = room;
 			currentFloor = floorForRoom(room);
 			currentPlug = ((Math.max(1, room) - 1) % QUESTIONS_PER_FLOOR) + 1;
-			highlight = room <= TOTAL_QUESTION_SLOTS ? questionTableIdForRoom(room) : null;
-			nextPlug = null;
+			// A boss clear moves every house to the same next floor.
 			if (open && currentFloor !== map.floor) switchFloor(floorTarget(currentFloor, 'stairs'));
 		},
 		setOpen(next: boolean) {
@@ -447,9 +434,6 @@ export function createGame(options: GameOptions) {
 		setSolved(ids: Iterable<string>) {
 			solved.clear();
 			for (const id of ids) solved.add(id);
-		},
-		setNextPlug(id: string | null) {
-			nextPlug = id;
 		},
 		setPaused(next: boolean) {
 			paused = next;

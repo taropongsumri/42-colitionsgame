@@ -89,8 +89,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
 	z.object({
 		type: z.literal('answerResult'),
 		correct: z.boolean(),
-		lockUntil: z.number().nullable(),
-		nextPlugId: z.string().optional()
+		lockUntil: z.number().nullable()
 	}),
 	// Boss messages never carry accepted answers — those stay on the server.
 	z.object({

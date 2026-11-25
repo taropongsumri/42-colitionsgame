@@ -137,11 +137,8 @@ export async function roomStatuses(state: HouseState) {
 	return Array.from({ length: config.game.plugsPerFloor }, (_, index) => {
 		const plug = index + 1;
 		const room = roomForFloorPlug(floor, plug);
-		const status = state.solvedRooms.includes(room)
-			? 'solved'
-			: room === state.room
-				? 'open'
-				: 'locked';
+		// No plug has priority: every unsolved plug on the shared floor is open.
+		const status = state.solvedRooms.includes(room) ? 'solved' : 'open';
 		return { number: plug, status };
 	});
 }

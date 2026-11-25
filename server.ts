@@ -540,7 +540,7 @@ const server = Bun.serve<SocketData>({
 			}
 
 			if (message.type === 'answer') {
-				const result = await submitAnswer(ws.data.house, message.answer);
+				const result = await submitAnswer(ws.data.house, message.answer, message.roomId);
 				for (const outgoing of result.messages) send(ws, outgoing);
 				if (result.notice) broadcast({ type: 'notice', text: result.notice });
 				if (result.progressChanged) {
@@ -563,6 +563,12 @@ const server = Bun.serve<SocketData>({
 				const result = await runBossMessage(ws.data.house, message);
 				for (const outgoing of result.messages) send(ws, outgoing);
 				if (result.notice) broadcast({ type: 'notice', text: result.notice });
+				if (result.shared) {
+					for (const [house, messages] of result.shared) {
+						for (const outgoing of messages) sendToHouse(house, outgoing);
+						await sendBossList(house);
+					}
+				}
 				if (result.progressChanged) {
 					broadcast(await shadows());
 					await sendScoreboard();

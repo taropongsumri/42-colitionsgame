@@ -288,7 +288,6 @@
 						game?.setSolved(
 							state.solvedRooms.map((room) => questionTableIdForRoom(room))
 						);
-						game?.setNextPlug(null);
 						game?.setBossReady(state.status === 'boss');
 						game?.setBossActive(Boolean(state.boss?.active));
 						game?.setBossRetryAt(state.bossRetryAt ?? null);
@@ -323,20 +322,17 @@
 								: questionTableIdForRoom(Number(message.room ?? state?.room ?? 1));
 						terminalSolved = false;
 						feedback = '';
-						game?.setNextPlug(null);
 						game?.setPaused(true);
 						break;
 					case 'answerResult': {
 						const result = message as unknown as {
 							correct: boolean;
 							lockUntil: number | null;
-							nextPlugId?: string;
 						};
 						lockUntil = result.lockUntil;
 						if (result.correct) {
 							terminalSolved = true;
 							feedback = 'ACCESS GRANTED';
-							game?.setNextPlug(result.nextPlugId ?? null);
 						} else {
 							const seconds = result.lockUntil
 								? Math.max(1, Math.ceil((result.lockUntil - Date.now()) / 1000))

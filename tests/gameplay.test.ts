@@ -117,7 +117,7 @@ describe('phase 2 gameplay', () => {
 		expect(clearPlace('h3', now, houses)).toBe(1);
 	});
 
-	test('wrong answer locks terminal and correct answer advances progress', async () => {
+	test('wrong answer locks terminal and any plug can be cleared first', async () => {
 		const store = await getStore();
 		const house = await store.getHouse('h1');
 		expect(house).not.toBeNull();
@@ -132,20 +132,18 @@ describe('phase 2 gameplay', () => {
 		const question = await questionFor('h1', 1);
 		expect(question).not.toBeNull();
 
-		const currentTable = tablesFor('h1', 1).real;
-		const otherTable = TABLE_IDS.find((id) => id !== currentTable)!;
-		expect(currentTable).toBe('f1-r1');
-		const wrongTable = interact('h1', otherTable);
+		const otherFloor = TABLE_IDS.find((id) => id.startsWith('f2-'))!;
+		const wrongTable = interact('h1', otherFloor);
 		expect((await wrongTable).messages[0]).toMatchObject({ type: 'notice' });
 
-		const asked = await interact('h1', tablesFor('h1', 1).real);
+		const asked = await interact('h1', 'f1-r1');
 		expect(asked.messages[0]).toMatchObject({ type: 'question', room: 1, prompt: question!.question });
 
-		const wrong = await submitAnswer('h1', 'definitely-wrong');
+		const wrong = await submitAnswer('h1', 'definitely-wrong', 'f1-r1');
 		expect(wrong.messages[0]).toMatchObject({ type: 'answerResult', correct: false });
 		expect((await store.getHouse('h1'))!.answerLockUntil).toBeGreaterThan(Date.now());
 
-		const locked = await submitAnswer('h1', question!.answer);
+		const locked = await submitAnswer('h1', question!.answer, 'f1-r1');
 		expect(locked.messages[0]).toMatchObject({ type: 'answerResult', correct: false });
 		expect((await store.getHouse('h1'))!.room).toBe(1);
 
@@ -153,14 +151,26 @@ describe('phase 2 gameplay', () => {
 		waiting!.answerLockUntil = null;
 		await store.saveHouse(waiting!);
 
-		const advanced = await submitAnswer('h1', question!.answer);
-		expect(advanced.messages[0]).toMatchObject({ type: 'answerResult', correct: true });
-		expect(advanced.messages).toContainEqual({ type: 'state', state: expect.objectContaining({ id: 'h1', room: 2 }) });
+		// Plug 6 is answered first: no first/second priority exists.
+		const picked = await questionFor('h1', 6);
+		const advanced = await submitAnswer('h1', picked!.answer, 'f1-r6');
+		expect(advanced.messages[0]).toEqual({ type: 'answerResult', correct: true, lockUntil: null });
+		expect(advanced.messages).toContainEqual({ type: 'state', state: expect.objectContaining({ id: 'h1', room: 6 }) });
 		const done = (await store.getHouse('h1'))!;
-		expect(done.room).toBe(2);
-		expect(done.solvedRooms).toEqual([1]);
+		expect(done.room).toBe(6);
+		expect(done.solvedRooms).toEqual([6]);
 		expect(done.score).toBeGreaterThanOrEqual(100);
 		expect(done.lastClearAt).not.toBeNull();
+
+		const dungeon = advanced.messages.find((message) => message.type === 'dungeon') as
+			| Record<string, unknown>
+			| undefined;
+		expect(dungeon?.rooms).toEqual(
+			Array.from({ length: 6 }, (_, index) => ({
+				number: index + 1,
+				status: index === 5 ? 'solved' : 'open'
+			}))
+		);
 	});
 
 	test('admin clock and force unlock controls mutate state', async () => {
@@ -384,20 +394,18 @@ describe('phase 2 gameplay', () => {
 		expect(done.boss.active).toBe(false);
 		expect(done.boss.wordIndex).toBe(totalWords);
 
-		// The bottom-left checkpoint strip must restart at 0 solved on the next floor.
+		// The bottom-left checkpoint strip must restart at 0 solved on the next floor,
+		// with every plug on that floor available immediately.
 		const dungeon = lastMessages.messages.find(
 			(message) => (message as { type?: string }).type === 'dungeon'
 		) as Record<string, unknown> | undefined;
 		expect(dungeon).toMatchObject({
 			type: 'dungeon',
 			current: done.room,
-			rooms: [
-				{ number: 1, status: 'open' },
-				...Array.from({ length: config.game.plugsPerFloor - 1 }, (_, index) => ({
-					number: index + 2,
-					status: 'locked'
-				}))
-			]
+			rooms: Array.from({ length: config.game.plugsPerFloor }, (_, index) => ({
+				number: index + 1,
+				status: 'open'
+			}))
 		});
 	});
 

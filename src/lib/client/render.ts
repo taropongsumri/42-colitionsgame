@@ -33,12 +33,6 @@ export type Actor = {
 export type RenderState = {
 	solved: Set<string>;
 	near: string | null;
-	/** The question plug for the house's current room; it glows brighter. */
-	highlight: string | null;
-	/** After a correct answer, a red arrow points at the next plug. */
-	next?: string | null;
-	/** Player world position, so plug arrows can rotate toward the player. */
-	player?: { x: number; y: number } | null;
 	/** Spectators can see the boss gate on every lift. */
 	bossGate?: boolean;
 	/** The old prototype's backroom backdrop, drawn behind the white floors. */
@@ -109,103 +103,6 @@ function label(ctx: CanvasRenderingContext2D, text: string, x: number, y: number
 	ctx.fillStyle = color;
 	ctx.fillText(text, x, y);
 	ctx.restore();
-}
-
-const ARROW_PIXEL = 2;
-const arrowSprites = new Map<string, HTMLCanvasElement>();
-
-/** Chunky right-facing arrow sprite, drawn on whole pixels and cached by colour. */
-function pixelArrow(color: string, outline: string): HTMLCanvasElement {
-	const key = `${color}|${outline}`;
-	const cached = arrowSprites.get(key);
-	if (cached) return cached;
-
-	const sprite = document.createElement('canvas');
-	sprite.width = 10 * ARROW_PIXEL;
-	sprite.height = 9 * ARROW_PIXEL;
-	const c = sprite.getContext('2d')!;
-	const rows = [
-		'........#.',
-		'.......##.',
-		'......###.',
-		'#########.',
-		'#########.',
-		'......###.',
-		'.......##.',
-		'........#.'
-	];
-	const paint = (fill: string, ox: number, oy: number) => {
-		c.fillStyle = fill;
-		for (let y = 0; y < rows.length; y += 1) {
-			for (let x = 0; x < rows[y].length; x += 1) {
-				if (rows[y][x] === '#') {
-					c.fillRect(x * ARROW_PIXEL + ox, y * ARROW_PIXEL + oy, ARROW_PIXEL, ARROW_PIXEL);
-				}
-			}
-		}
-	};
-	paint(outline, -ARROW_PIXEL, 0);
-	paint(outline, ARROW_PIXEL, 0);
-	paint(outline, 0, -ARROW_PIXEL);
-	paint(outline, 0, ARROW_PIXEL);
-	paint(color, 0, 0);
-	c.globalAlpha = 0.35;
-	c.fillStyle = '#ffffff';
-	c.fillRect(0, 3 * ARROW_PIXEL, 7 * ARROW_PIXEL, ARROW_PIXEL);
-	c.globalAlpha = 1;
-	arrowSprites.set(key, sprite);
-	return sprite;
-}
-
-/** Draws the pixel arrow at any angle; angle 0 points right. */
-function drawPixelArrow(
-	ctx: CanvasRenderingContext2D,
-	x: number,
-	y: number,
-	angle: number,
-	color: string,
-	outline: string
-) {
-	const sprite = pixelArrow(color, outline);
-	ctx.save();
-	ctx.translate(Math.round(x), Math.round(y));
-	ctx.rotate(angle);
-	ctx.imageSmoothingEnabled = false;
-	ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
-	ctx.restore();
-}
-
-/** Orbit the plug on the player's side so the arrow can point at it from any direction. */
-function plugArrowPose(
-	prop: Prop,
-	cx: number,
-	cy: number,
-	player: { x: number; y: number } | null | undefined,
-	t: number
-) {
-	if (!player) {
-		return {
-			x: cx,
-			y: cy - 30 + Math.round(Math.sin(t * 6) * 3),
-			angle: Math.PI / 2
-		};
-	}
-	const dx = player.x - prop.x;
-	const dy = player.y - prop.y;
-	const length = Math.hypot(dx, dy);
-	if (length < 1) {
-		return {
-			x: cx,
-			y: cy - 30 + Math.round(Math.sin(t * 6) * 3),
-			angle: Math.PI / 2
-		};
-	}
-	const ux = dx / length;
-	const uy = dy / length;
-	const orbit = 26 + Math.round(Math.sin(t * 6) * 2);
-	const x = cx + ux * orbit;
-	const y = cy + uy * (orbit * 0.7);
-	return { x, y, angle: Math.atan2(cy - y, cx - x) };
 }
 
 function drawOutdoorTile(ctx: CanvasRenderingContext2D, c: string, x: number, y: number, tx: number, ty: number) {
@@ -376,37 +273,24 @@ function drawTable(ctx: CanvasRenderingContext2D, prop: Prop, cam: Camera, st: R
 	ctx.fillStyle = C.hole; ctx.fillRect(cx - 2, cy - 1, 5, 3);
 	ctx.fillStyle = C.pins; ctx.fillRect(cx - 1, cy, 1, 1); ctx.fillRect(cx + 1, cy, 1, 1);
 	if (prop.roomId) {
+		// Every uncleared plug glows equally: there is no next-plug arrow or priority.
 		const solved = st.solved.has(prop.roomId);
-		const current = prop.roomId === st.highlight;
-		const pulse = solved ? 0.45 : current ? 0.65 + Math.sin(t * 4) * 0.3 : 0.2 + Math.sin(t * 2) * 0.08;
+		const pulse = solved ? 0.45 : 0.62 + Math.sin(t * 4 + prop.tx) * 0.2;
 		const color = solved ? '120,230,150' : '255,190,60';
 		ctx.save();
 		ctx.globalCompositeOperation = 'lighter';
-		const glow = ctx.createRadialGradient(cx + 0.5, cy, 0, cx + 0.5, cy, current ? 16 : 11);
+		const glow = ctx.createRadialGradient(cx + 0.5, cy, 0, cx + 0.5, cy, 13);
 		glow.addColorStop(0, `rgba(${color},${pulse})`);
 		glow.addColorStop(1, `rgba(${color},0)`);
 		ctx.fillStyle = glow;
-		const reach = current ? 16 : 11;
-		ctx.fillRect(cx - reach, cy - reach, reach * 2 + 1, reach * 2);
+		ctx.fillRect(cx - 13, cy - 13, 27, 26);
 		ctx.restore();
-		ctx.fillStyle = solved ? '#7be39a' : current ? '#ffc23c' : '#d9a441';
+		ctx.fillStyle = solved ? '#7be39a' : '#ffc23c';
 		ctx.fillRect(cx - 1, cy, 1, 1); ctx.fillRect(cx + 1, cy, 1, 1);
-		if (st.near === prop.roomId || (current && st.near === prop.roomId)) {
+		if (st.near === prop.roomId) {
 			ctx.fillStyle = '#ffffff';
 			const by = cy - 22 + Math.round(Math.sin(t * 5));
 			ctx.fillRect(cx - 1, by, 3, 3); ctx.fillRect(cx, by + 3, 1, 2);
-		}
-		if (current && !solved && st.next !== prop.roomId) {
-			// Persistent pixel marker for the plug the player still has to visit.
-			const pose = plugArrowPose(prop, cx, cy, st.player, t);
-			drawPixelArrow(ctx, pose.x, pose.y, pose.angle, '#ffd166', '#4a3200');
-			label(ctx, 'GO', pose.x, pose.y - 12, '#ffe6a8', 0.95);
-		}
-		if (st.next === prop.roomId) {
-			// Red pixel arrow that rotates to point at the next plug from any side.
-			const pose = plugArrowPose(prop, cx, cy, st.player, t);
-			drawPixelArrow(ctx, pose.x, pose.y, pose.angle, '#ff3b4e', '#3a0a12');
-			label(ctx, 'NEXT', pose.x, pose.y - 12, '#ff6b7a', 0.95);
 		}
 	}
 	drawMac(ctx, cx - 9, cy + 7, true, t, prop.tx * 3 + prop.ty);

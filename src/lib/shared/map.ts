@@ -216,6 +216,14 @@ export function questionTableIdForRoom(room: number): string {
 	return `f${floorForRoom(room)}-r${questionIndexForRoom(room) + 1}`;
 }
 
+/** Resolve a plug table id (`f1-r3`) back to its global room number. */
+export function roomForTableId(tableId: string): number | null {
+	const match = /^f(\d+)-r(\d+)$/.exec(tableId);
+	if (!match) return null;
+	const room = roomForFloorPlug(Number(match[1]), Number(match[2]));
+	return questionTableIdForRoom(room) === tableId ? room : null;
+}
+
 /** Another plug on the same floor hides the hint for the current question. */
 export function hintTableIdForRoom(room: number): string {
 	const floor = floorForRoom(room);

@@ -161,7 +161,6 @@ export function createSpectator(options: SpectatorOptions) {
 		renderFloor(ctx, map, cam, view, actors, t, {
 			solved: new Set<string>(),
 			near: null,
-			highlight: null,
 			bossGate: map.floor > 0,
 			background
 		});

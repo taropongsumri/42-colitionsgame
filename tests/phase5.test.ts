@@ -122,14 +122,14 @@ describe('phase 5 floor model', () => {
 });
 
 describe('phase 5 progression and boss lifecycle', () => {
-	test('plug six opens the lift and a boss win unlocks the next floor', async () => {
+	test('any plug order opens the lift and a boss win unlocks the next floor for everyone', async () => {
 		const store = await getStore();
 		const config = await liveConfig();
 		await store.replaceQuestions(bank);
 		const house = (await store.getHouse('h1'))!;
 		house.questionOrder = dealAllHouses(bank).h1;
-		house.room = 5;
-		house.solvedRooms = [1, 2, 3, 4];
+		house.room = 1;
+		house.solvedRooms = [];
 		house.status = 'open';
 		house.defeatedBosses = [];
 		house.bossRetryAt = null;
@@ -137,24 +137,28 @@ describe('phase 5 progression and boss lifecycle', () => {
 		house.answerLockUntil = null;
 		await store.saveHouse(house);
 
-		const fifth = await questionFor('h1', 5);
-		const fifthResult = await submitAnswer('h1', fifth!.answer);
-		const afterFifth = (await store.getHouse('h1'))!;
-		expect(afterFifth.room).toBe(6);
-		expect(afterFifth.status).toBe('open');
-		expect(
-			fifthResult.messages.find((message) => message.type === 'answerResult')
-		).toMatchObject({ nextPlugId: 'f1-r6' });
-
+		// Plug 6 is valid immediately: plugs have no priority order.
 		const sixth = await questionFor('h1', 6);
-		const sixthResult = await submitAnswer('h1', sixth!.answer);
-		const gated = (await store.getHouse('h1'))!;
-		expect(gated.room).toBe(6);
-		expect(gated.status).toBe('boss');
-		expect(gated.solvedRooms).toEqual([1, 2, 3, 4, 5, 6]);
+		const sixthResult = await submitAnswer('h1', sixth!.answer, 'f1-r6');
+		const afterSixth = (await store.getHouse('h1'))!;
+		expect(afterSixth.room).toBe(6);
+		expect(afterSixth.status).toBe('open');
+		expect(afterSixth.solvedRooms).toEqual([6]);
 		expect(
 			sixthResult.messages.find((message) => message.type === 'answerResult')
-		).not.toHaveProperty('nextPlugId');
+		).toEqual({ type: 'answerResult', correct: true, lockUntil: null });
+
+		for (const plug of [3, 1, 5, 2, 4]) {
+			const question = await questionFor('h1', plug);
+			await submitAnswer('h1', question!.answer, `f1-r${plug}`);
+		}
+		const gated = (await store.getHouse('h1'))!;
+		expect(gated.status).toBe('boss');
+		expect([...gated.solvedRooms].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6]);
+
+		// The other houses are still on floor 1 until the boss is defeated.
+		const waiting = (await store.getHouse('h2'))!;
+		expect(floorForRoom(waiting.room)).toBe(1);
 
 		const entered = await enterBoss('h1', 'staff');
 		expect(entered.messages.some((message) => message.type === 'boss.start')).toBe(true);
@@ -165,12 +169,26 @@ describe('phase 5 progression and boss lifecycle', () => {
 		fighting.boss.wordCombo = staff.comboBreakEvery - 1;
 		await store.saveHouse(fighting);
 		const word = fighting.boss.wordQueue[fighting.boss.wordIndex];
-		await submitBossWord('h1', word);
+		const won = await submitBossWord('h1', word);
 		const advanced = (await store.getHouse('h1'))!;
 		expect(advanced.boss.active).toBe(false);
 		expect(advanced.room).toBe(7);
 		expect(advanced.status).toBe('open');
 		expect(advanced.defeatedBosses).toContain('staff');
+
+		// Everyone moves to floor 2 together, even if they were at another plug.
+		for (const id of ['h2', 'h3'] as const) {
+			const sharedHouse = (await store.getHouse(id))!;
+			expect(sharedHouse.room).toBe(7);
+			expect(sharedHouse.status).toBe('open');
+			expect(sharedHouse.defeatedBosses).toContain('staff');
+			const messages = won.shared?.get(id) ?? [];
+			expect(messages).toContainEqual({
+				type: 'state',
+				state: expect.objectContaining({ id, room: 7 })
+			});
+			expect(messages.some((message) => message.type === 'dungeon')).toBe(true);
+		}
 
 		const again = await enterBoss('h1', 'staff');
 		expect(again.messages).toContainEqual(

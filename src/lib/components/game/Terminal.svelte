@@ -18,8 +18,8 @@
 	let input: HTMLInputElement;
 	let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
-	// A correct answer closes the terminal automatically, leaving the red
-	// next-plug arrow visible on the map.
+	// A correct answer closes the terminal automatically so the player can
+	// walk straight to any other plug on the same floor.
 	$: if (solved && closeTimer === null) {
 		closeTimer = setTimeout(() => {
 			closeTimer = null;

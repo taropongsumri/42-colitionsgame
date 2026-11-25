@@ -3,13 +3,7 @@
  * progress live here; clients only receive public state and effects.
  */
 import type { LiveConfig } from '../../../../config';
-import {
-	FLOOR_COUNT,
-	TOTAL_QUESTION_SLOTS,
-	floorAndPlug,
-	floorForRoom,
-	roomForFloorPlug
-} from '../../shared/map';
+import { FLOOR_COUNT, floorAndPlug, floorForRoom, roomForFloorPlug } from '../../shared/map';
 import type { ServerMessage } from '../../shared/protocol';
 import { HOUSES, type HouseId } from '../../shared/types';
 import { audit } from '../audit';
@@ -25,11 +19,30 @@ type BossConfig = LiveConfig['boss']['bosses'][number];
 
 export interface BossResult {
 	messages: ServerMessage[];
+	/** Floor changes must reach every house, not just the one that won. */
+	shared?: Map<HouseId, ServerMessage[]>;
 	notice?: string;
 	progressChanged?: boolean;
 }
 
+interface BossFinish {
+	messages: ServerMessage[];
+	shared: Map<HouseId, ServerMessage[]>;
+}
+
 const error = (code: string, message: string): ServerMessage => ({ type: 'error', code, message });
+
+function mergeShared(
+	target: Map<HouseId, ServerMessage[]>,
+	source: Map<HouseId, ServerMessage[]>
+): void {
+	for (const [id, messages] of source) {
+		const existing = target.get(id) ?? [];
+		existing.push(...messages);
+		target.set(id, existing);
+	}
+}
+
 const now = () => Date.now();
 
 /** Public metadata only. `answers` is deliberately never included. */
@@ -347,7 +360,12 @@ export async function submitBossWord(houseId: HouseId, word: string): Promise<Bo
 			finisherTier
 		}
 	];
-	if (won) messages.push(...(await finishBoss(house, config)));
+	let shared = new Map<HouseId, ServerMessage[]>();
+	if (won) {
+		const finish = await finishBoss(house, config);
+		messages.push(...finish.messages);
+		shared = finish.shared;
+	}
 	await store.saveHouse(house);
 	if (won) {
 		await audit(
@@ -362,7 +380,7 @@ export async function submitBossWord(houseId: HouseId, word: string): Promise<Bo
 		);
 	}
 
-	return { messages, progressChanged: won };
+	return { messages, shared, progressChanged: won };
 }
 
 /** Spend shield for an immediate hit. Damage and cooldown stay server-side. */
@@ -545,7 +563,7 @@ export async function swapBossPlayer(houseId: HouseId): Promise<BossResult> {
 	return { messages: [{ type: 'boss.swap', readyAt: fight.swapReadyAt, invulnUntil: fight.invulnUntil }] };
 }
 
-async function finishBoss(house: HouseState, config: LiveConfig): Promise<ServerMessage[]> {
+async function finishBoss(house: HouseState, config: LiveConfig): Promise<BossFinish> {
 	const fight = house.boss;
 	const boss = findBoss(config, fight.bossId);
 	const floor = boss?.floor ?? floorForRoom(house.room);
@@ -558,41 +576,76 @@ async function finishBoss(house: HouseState, config: LiveConfig): Promise<Server
 	house.bossRetryAt = null;
 	if (boss && !house.defeatedBosses.includes(boss.id)) house.defeatedBosses.push(boss.id);
 	const allDefeated = config.boss.bosses.every((entry) => house.defeatedBosses.includes(entry.id));
-	if (!allDefeated && floor < FLOOR_COUNT) {
-		// Floors are strictly sequential: the lift only opens the next six plugs.
-		house.room = roomForFloorPlug(floor + 1, 1);
-	}
+	const advance = !allDefeated && floor < FLOOR_COUNT;
+	if (advance) house.room = roomForFloorPlug(floor + 1, 1);
 	house.status = allDefeated || floor >= FLOOR_COUNT ? 'solved' : 'open';
 
-	const houses = await getStore().then((store) => store.listHouses());
+	const store = await getStore();
+	const houses = await store.listHouses();
 	const sorted = [...houses].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
 	const place = sorted.findIndex((item) => item.id === house.id) + 1 || sorted.length;
 	const points = Math.round(config.scoring.bossPoints * (1 + bonusPercent(place, config) / 100));
 	house.score += points;
 
-	return [
-		{
-			type: 'boss.end',
-			won: true,
-			score: house.score,
-			bossHp: fight.hp,
-			reason: 'win',
-			floor
-		},
-		{ type: 'state', state: house },
-		{
-			type: 'dungeon',
-			current: house.room,
-			...floorAndPlug(house.room),
-			rooms: await roomStatuses(house)
-		},
-		{
-			type: 'notice',
-			text: `${HOUSES[house.id].name} defeated ${boss?.name ?? 'the boss'}${
-				allDefeated ? ' and escaped the backrooms' : ` · floor ${floor + 1} unlocked`
-			}! +${points} points.`
+	// Everyone shares the same floor, so a boss clear moves every house up
+	// together and cancels any fight still running on the floor behind.
+	const shared = new Map<HouseId, ServerMessage[]>();
+	for (const other of houses) {
+		if (other.id === house.id) continue;
+		if (boss && !other.defeatedBosses.includes(boss.id)) other.defeatedBosses.push(boss.id);
+		if (advance) {
+			other.room = roomForFloorPlug(floor + 1, 1);
+			other.status = 'open';
+		} else if (allDefeated || floor >= FLOOR_COUNT) {
+			other.status = 'solved';
 		}
-	];
+		other.boss = emptyBoss();
+		other.answerLockUntil = null;
+		other.bossRetryAt = null;
+		await store.saveHouse(other);
+		shared.set(other.id, [
+			{ type: 'state', state: other },
+			{
+				type: 'dungeon',
+				current: other.room,
+				...floorAndPlug(other.room),
+				rooms: await roomStatuses(other)
+			},
+			{
+				type: 'notice',
+				text: `${HOUSES[house.id].name} defeated ${boss?.name ?? 'the boss'}${
+					advance ? ` · floor ${floor + 1} unlocked` : ''
+				}!`
+			}
+		]);
+	}
+
+	return {
+		messages: [
+			{
+				type: 'boss.end',
+				won: true,
+				score: house.score,
+				bossHp: fight.hp,
+				reason: 'win',
+				floor
+			},
+			{ type: 'state', state: house },
+			{
+				type: 'dungeon',
+				current: house.room,
+				...floorAndPlug(house.room),
+				rooms: await roomStatuses(house)
+			},
+			{
+				type: 'notice',
+				text: `${HOUSES[house.id].name} defeated ${boss?.name ?? 'the boss'}${
+					allDefeated ? ' and escaped the backrooms' : ` · floor ${floor + 1} unlocked`
+				}! +${points} points.`
+			}
+		],
+		shared
+	};
 }
 
 /** Knockout cleanup: after the death delay, remove the player from the fight. */
@@ -633,12 +686,15 @@ export interface BossTick {
 export async function bossTick(): Promise<BossTick> {
 	const store = await getStore();
 	const config = await liveConfig();
-	const houses = await store.listHouses();
+	const ids = (await store.listHouses()).map((house) => house.id);
 	const byHouse = new Map<HouseId, ServerMessage[]>();
+	const shared = new Map<HouseId, ServerMessage[]>();
 	let progressChanged = false;
 
-	for (const house of houses) {
-		if (!house.boss.active) continue;
+	for (const id of ids) {
+		// Re-read each house: an earlier house may have cleared the shared floor.
+		const house = await store.getHouse(id);
+		if (!house?.boss.active) continue;
 		const boss = findBoss(config, house.boss.bossId);
 		if (!boss) continue;
 		const fight: BossState = house.boss;
@@ -667,7 +723,9 @@ export async function bossTick(): Promise<BossTick> {
 						combo: audition.combo + 1,
 						finisher: true
 					});
-					messages.push(...(await finishBoss(house, config)));
+					const finish = await finishBoss(house, config);
+					messages.push(...finish.messages);
+					mergeShared(shared, finish.shared);
 					dirty = true;
 					progressChanged = true;
 					break;
@@ -688,7 +746,10 @@ export async function bossTick(): Promise<BossTick> {
 				});
 				dirty = true;
 				if (fight.hp <= 0) {
-					messages.push(...(await finishBoss(house, config)));
+					const finish = await finishBoss(house, config);
+					messages.push(...finish.messages);
+					mergeShared(shared, finish.shared);
+					dirty = true;
 					progressChanged = true;
 					break;
 				}
@@ -713,6 +774,12 @@ export async function bossTick(): Promise<BossTick> {
 			});
 		}
 		if (messages.length) byHouse.set(house.id, messages);
+	}
+
+	for (const [id, messages] of shared) {
+		const existing = byHouse.get(id) ?? [];
+		existing.push(...messages);
+		byHouse.set(id, existing);
 	}
 
 	return { byHouse, progressChanged };
